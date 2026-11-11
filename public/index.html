@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TCG CotaPool — Cotador Fabrary &amp; TCGPlayer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Cinzel:wght@600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Ambient Background -->
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+
+  <!-- Top Navbar -->
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <div class="brand">
+        <div class="brand-logo">⚔️</div>
+        <div>
+          <h1 class="brand-title">TCG CotaPool</h1>
+          <p class="brand-subtitle">Flesh and Blood • Fabrary Deck Importer &amp; TCGPlayer Pricer</p>
+        </div>
+      </div>
+      <div class="topbar-badges">
+        <span class="pill pill-gold">Moeda: USD ($)</span>
+        <span class="pill pill-blue">⚡ Sempre Menor Valor p/ Filtro</span>
+        <span class="pill pill-emerald">Tokens: $0.00 (Grátis)</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <!-- STEP 1: FABRARY DECK INPUT -->
+    <section class="card-panel step-panel" id="step1Panel">
+      <div class="step-header">
+        <div class="step-badge">PASSO 1</div>
+        <div>
+          <h2 class="step-title">Importar Lista de Cartas do Fabrary</h2>
+          <p class="step-desc">Cole o link do deck do <strong>fabrary.net</strong> para listar todas as cartas encontradas (Herói, Arena, Deck Principal, Sideboard e Tokens).</p>
+        </div>
+      </div>
+
+      <form id="deckForm" class="deck-input-row">
+        <div class="input-wrapper">
+          <span class="input-icon">🔗</span>
+          <input
+            type="text"
+            id="deckUrlInput"
+            placeholder="https://fabrary.net/decks/01M75ERAT0XKSFDHXV0D7FGEW9"
+            value="https://fabrary.net/decks/01M75ERAT0XKSFDHXV0D7FGEW9"
+            autocomplete="off"
+            required
+          />
+          <button type="button" id="clearInputBtn" class="btn-icon-clear" title="Limpar campo">✕</button>
+        </div>
+        <button type="submit" id="fetchDeckBtn" class="btn btn-primary">
+          <span class="btn-spinner" id="fetchSpinner" hidden></span>
+          <span id="fetchBtnText">1. Buscar Lista no Fabrary</span>
+        </button>
+      </form>
+
+      <div id="errorBanner" class="error-banner" hidden></div>
+    </section>
+
+    <!-- DECK HEADER BANNER (Shown after Step 1) -->
+    <section id="deckOverviewSection" class="deck-overview-card" hidden>
+      <div class="deck-hero-banner" id="deckHeroBanner"></div>
+      <div class="deck-overview-content">
+        <div class="deck-hero-avatar-wrap">
+          <img id="deckHeroThumb" src="" alt="Hero" class="deck-hero-thumb" />
+        </div>
+        <div class="deck-meta-info">
+          <div class="deck-format-row">
+            <span class="badge badge-format" id="deckFormatBadge">Classic Constructed</span>
+            <a id="deckFabraryLink" href="#" target="_blank" rel="noopener noreferrer" class="external-link">
+              Abrir no Fabrary ↗
+            </a>
+          </div>
+          <h2 id="deckNameTitle" class="deck-name-title">Nome do Deck</h2>
+          <p id="deckHeroSubtitle" class="deck-hero-subtitle">Herói</p>
+        </div>
+        <div class="deck-counts-grid">
+          <div class="count-stat">
+            <span class="count-value" id="statUniqueCards">0</span>
+            <span class="count-label">Cartas Únicas</span>
+          </div>
+          <div class="count-stat">
+            <span class="count-value" id="statTotalCopies">0</span>
+            <span class="count-label">Total de Cópias</span>
+          </div>
+          <div class="count-stat count-stat-token">
+            <span class="count-value" id="statTokenCount">0</span>
+            <span class="count-label">Tokens (Grátis)</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 2: TCGPLAYER FILTERS & EVALUATION TRIGGER (Shown after Step 1) -->
+    <section id="step2FiltersSection" class="card-panel step-panel step-panel-tcg" hidden>
+      <div class="step-header step-header-split">
+        <div class="step-header-left">
+          <div class="step-badge step-badge-tcg">PASSO 2</div>
+          <div>
+            <h2 class="step-title">Filtros de Edição, Idioma e Foiling para o TCGPlayer</h2>
+            <p class="step-desc">Para cartas com o <strong>mesmo nome em edições diferentes</strong>, o sistema analisa todas as edições compatíveis com o seu filtro e <strong>sempre cota o menor valor encontrado</strong>.</p>
+          </div>
+        </div>
+        <div class="step-header-actions">
+          <button type="button" id="resetFiltersBtn" class="btn btn-ghost btn-sm">Restaurar Filtros</button>
+          <button type="button" id="evaluateTcgBtn" class="btn btn-tcg">
+            <span class="btn-spinner" id="evalSpinner" hidden></span>
+            <span id="evalBtnText">💲 2. Avaliar Menor Preço no TCGPlayer</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="filters-grid filters-grid-5">
+        <!-- Selection Mode -->
+        <div class="filter-group">
+          <label for="filterEditionStrategy">Regra de Cotação entre Edições</label>
+          <select id="filterEditionStrategy" class="form-select">
+            <option value="cheapest" selected>⚡ Sempre Menor Valor no Filtro (Recomendado)</option>
+            <option value="deckDefault">Edição Definida no Deck (ou Menor Valor)</option>
+            <option value="mostExpensive">Maior Valor / Max Bling no Filtro</option>
+          </select>
+        </div>
+
+        <!-- Language Filter -->
+        <div class="filter-group">
+          <label for="filterLanguage">Idioma / Língua da Carta</label>
+          <select id="filterLanguage" class="form-select">
+            <option value="English" selected>🇺🇸 Inglês (English — Padrão TCGPlayer)</option>
+            <option value="all">🌐 Qualquer Idioma (Menor Valor Global)</option>
+            <option value="Japanese">🇯🇵 Japonês (Japanese)</option>
+            <option value="French">🇫🇷 Francês (French)</option>
+            <option value="German">🇩🇪 Alemão (German)</option>
+            <option value="Italian">🇮🇹 Italiano (Italian)</option>
+            <option value="Spanish">🇪🇸 Espanhol (Spanish)</option>
+            <option value="Portuguese">🇧🇷 Português (Portuguese)</option>
+          </select>
+        </div>
+
+        <!-- Foiling Filter -->
+        <div class="filter-group">
+          <label for="filterFoiling">Filtro de Foiling</label>
+          <select id="filterFoiling" class="form-select">
+            <option value="all" selected>Todos os Foilings (Normal + Foil)</option>
+            <option value="Normal">Apenas Normal (Non-Foil)</option>
+            <option value="Rainbow">Apenas Rainbow Foil (RF)</option>
+            <option value="Cold">Apenas Cold Foil (CF)</option>
+          </select>
+        </div>
+
+        <!-- Set / Promo Filter -->
+        <div class="filter-group">
+          <label for="filterSetType">Filtro de Coleção / Edição</label>
+          <select id="filterSetType" class="form-select">
+            <option value="all" selected>Todas as Coleções (Menor entre Todas)</option>
+            <option value="noPromos">Excluir Promos / GEM (Sets Regulares)</option>
+            <option value="firstAlpha">Apenas 1st Edition / Alpha</option>
+            <option value="unlimitedRegular">Apenas Unlimited / Decks Pré-Construídos</option>
+          </select>
+        </div>
+
+        <!-- Price Metric on TCGPlayer -->
+        <div class="filter-group">
+          <label for="filterPriceMetric">Métrica de Preço TCGPlayer (USD)</label>
+          <select id="filterPriceMetric" class="form-select">
+            <option value="lowestAvailable" selected>⚡ Menor Valor Disponível na Edição/Idioma</option>
+            <option value="printPrice">Preço da Edição (TCGPlayer Print)</option>
+            <option value="marketPrice">Market Price Ao Vivo (TCGPlayer Market)</option>
+            <option value="lowestWithShipping">Menor Listagem + Frete (Lowest w/ Shipping)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Checkboxes for Tokens & Sections -->
+      <div class="filters-toggles-row">
+        <div class="toggles-block">
+          <span class="toggles-title">Regras de Tokens (Grátis / $0.00):</span>
+          <div class="toggles-list">
+            <label class="checkbox-pill checkbox-pill-emerald" title="Tokens gerados em jogo (ex: Spectral Shield, Lightning Flow) não são cobrados">
+              <input type="checkbox" id="toggleFreeGameTokens" checked />
+              <span>Tokens de Jogo = <strong>$0.00 (Não cobrados)</strong></span>
+            </label>
+            <label class="checkbox-pill checkbox-pill-emerald" title="Cartas cuja raridade é Token (ex: Iris of Reality ou armas/heróis Token) também ficam com preço $0.00">
+              <input type="checkbox" id="toggleFreeRarityTokens" checked />
+              <span>Zerar cartas com Raridade <strong>"Token"</strong> (ex: Armas/Heróis Token)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="toggles-block">
+          <span class="toggles-title">Seções Incluídas no Cálculo:</span>
+          <div class="toggles-list">
+            <label class="checkbox-pill">
+              <input type="checkbox" class="section-toggle" value="main" checked />
+              <span>Deck Principal</span>
+            </label>
+            <label class="checkbox-pill">
+              <input type="checkbox" class="section-toggle" value="arena" checked />
+              <span>Arena (Equip./Armas)</span>
+            </label>
+            <label class="checkbox-pill">
+              <input type="checkbox" class="section-toggle" value="inventory" checked />
+              <span>Inventory (Sideboard)</span>
+            </label>
+            <label class="checkbox-pill">
+              <input type="checkbox" class="section-toggle" value="hero" checked />
+              <span>Herói</span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MULTI-EDITION EXAMPLES PANEL (Same Card Name across Different Editions) -->
+    <section id="multiEditionExamplesSection" class="card-panel multi-edition-panel" hidden>
+      <div class="multi-edition-header">
+        <div>
+          <div class="multi-edition-title-row">
+            <span class="badge badge-edition-highlight">🔍 Mesmo Nome • Edições Diferentes</span>
+            <h3 class="multi-edition-title">Exemplos no Deck: Cartas com Múltiplas Edições (Cotadas pelo Menor Valor do Filtro)</h3>
+          </div>
+          <p class="multi-edition-desc">
+            Cartas com o mesmo nome (e mesmo pitch) frequentemente saem em coleções diferentes (ex: <em>Booster Set</em> vs <em>Armory Deck</em> vs <em>History Pack</em> vs <em>Promo GEM/LGS</em>) com preços muito diferentes. Veja como o filtro seleciona sempre a <strong>edição mais barata</strong> compatível:
+          </p>
+        </div>
+        <button type="button" id="toggleExamplesBodyBtn" class="btn btn-secondary btn-sm">
+          Ocultar Exemplos ▲
+        </button>
+      </div>
+      <div id="multiEditionExamplesGrid" class="multi-edition-grid"></div>
+    </section>
+
+    <!-- STEP 3: TCGPLAYER QUOTE SUMMARY DASHBOARD (Shown after evaluation) -->
+    <section id="quoteSummarySection" class="quote-summary-panel" hidden>
+      <div class="quote-summary-header">
+        <div>
+          <span class="quote-status-tag" id="quoteTimestampTag">Cotação Atualizada via TCGPlayer</span>
+          <h3 class="quote-summary-title">Resumo da Avaliação no TCGPlayer (USD)</h3>
+        </div>
+        <div class="quote-Export-actions">
+          <button type="button" id="exportExcelBtn" class="btn btn-excel btn-sm" title="Gerar planilha simples do Excel (.xlsx) sem imagens com as cartas e valores">
+            📊 Baixar Planilha Excel (.xlsx)
+          </button>
+          <a id="tcgMassEntryBtn" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-tcg-outline">
+            🛒 Comprar Lista no TCGPlayer (Mass Entry) ↗
+          </a>
+          <button type="button" id="copyQuoteBtn" class="btn btn-secondary btn-sm">📋 Copiar Cotação</button>
+          <button type="button" id="exportCsvBtn" class="btn btn-secondary btn-sm">📥 Exportar CSV</button>
+        </div>
+      </div>
+
+      <div class="summary-cards-grid">
+        <div class="summary-metric-card summary-metric-Highlight">
+          <span class="summary-metric-label" id="activeMetricLabel">Total da Lista (Menor Valor p/ Filtro)</span>
+          <div class="summary-metric-value" id="summaryTotalSelected">$0.00</div>
+          <span class="summary-metric-sub" id="summaryCardsChargedSub">0 cartas cobradas • 0 tokens grátis</span>
+        </div>
+
+        <div class="summary-metric-card">
+          <span class="summary-metric-label">Economia vs Edições Mais Caras</span>
+          <div class="summary-metric-value summary-metric-savings" id="summaryTotalSavings">$0.00</div>
+          <span class="summary-metric-sub" id="summarySavingsSub">Cotando sempre a edição mais barata do filtro</span>
+        </div>
+
+        <div class="summary-metric-card">
+          <span class="summary-metric-label">Total Market Price (TCGPlayer)</span>
+          <div class="summary-metric-value summary-metric-secondary" id="summaryTotalMarket">$0.00</div>
+          <span class="summary-metric-sub">Média de vendas das edições escolhidas</span>
+        </div>
+
+        <div class="summary-metric-card">
+          <span class="summary-metric-label">Divisão por Categoria</span>
+          <div class="summary-breakdown-list" id="summarySectionBreakdown">
+            <div class="breakdown-row"><span>Deck Principal:</span> <strong id="brkMain">$0.00</strong></div>
+            <div class="breakdown-row"><span>Arena (Equip./Armas):</span> <strong id="brkArena">$0.00</strong></div>
+            <div class="breakdown-row"><span>Inventory (Sideboard):</span> <strong id="brkInventory">$0.00</strong></div>
+            <div class="breakdown-row"><span>Herói:</span> <strong id="brkHero">$0.00</strong></div>
+            <div class="breakdown-row breakdown-token"><span>Tokens:</span> <strong>$0.00 (Isento)</strong></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CARDS LIST TABLE SECTION -->
+    <section id="cardsListSection" class="card-panel cards-list-panel" hidden>
+      <div class="list-toolbar">
+        <div class="tabs-bar" id="categoryTabs">
+          <button type="button" class="tab-btn active" data-tab="all">Todas (<span id="tabCountAll">0</span>)</button>
+          <button type="button" class="tab-btn" data-tab="arena">Arena / Equip. (<span id="tabCountArena">0</span>)</button>
+          <button type="button" class="tab-btn" data-tab="main">Deck Principal (<span id="tabCountMain">0</span>)</button>
+          <button type="button" class="tab-btn" data-tab="inventory">Inventory / Side (<span id="tabCountInventory">0</span>)</button>
+          <button type="button" class="tab-btn" data-tab="tokens">Tokens Grátis (<span id="tabCountTokens">0</span>)</button>
+          <button type="button" class="tab-btn" data-tab="hero">Herói (<span id="tabCountHero">0</span>)</button>
+        </div>
+
+        <div class="toolbar-right">
+          <!-- View Mode Toggle: Hide Images / Visual List vs Compact Thumbnails -->
+          <div class="view-mode-switch" role="group" aria-label="Modo de visualização da lista">
+            <button
+              type="button"
+              id="btnViewCompactThumb"
+              class="view-mode-btn active"
+              title="Exibir miniaturas pequenas das cartas"
+            >
+              🖼️ Miniaturas
+            </button>
+            <button
+              type="button"
+              id="btnViewVisualList"
+              class="view-mode-btn"
+              title="Esconder imagens e exibir lista visual compacta"
+            >
+              📋 Lista Visual (Sem Imagens)
+            </button>
+          </div>
+
+          <button
+            type="button"
+            id="toolbarExportExcelBtn"
+            class="btn btn-excel btn-sm"
+            title="Gerar planilha simples do Excel (.xlsx) sem imagens com as cartas e valores"
+          >
+            📊 Planilha Excel (.xlsx)
+          </button>
+          <div class="search-box">
+            <span>🔍</span>
+            <input type="text" id="cardSearchInput" placeholder="Filtrar por nome, código ou coleção..." />
+          </div>
+          <select id="sortOrderSelect" class="form-select form-select-sm">
+            <option value="section">Ordenar: Seção do Deck</option>
+            <option value="priceDesc">Ordenar: Maior Preço Total</option>
+            <option value="priceAsc">Ordenar: Menor Preço Unitário</option>
+            <option value="editionsDesc">Ordenar: Mais Edições Diferentes</option>
+            <option value="nameAsc">Ordenar: Nome (A-Z)</option>
+            <option value="pitchAsc">Ordenar: Pitch (Vermelho → Azul)</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="preEvaluationNotice" class="pre-eval-notice">
+        <div class="pre-eval-notice-content">
+          <span class="pre-eval-icon">ℹ️</span>
+          <div>
+            <strong>Lista carregada com sucesso do Fabrary!</strong>
+            <p>Todas as cartas já estão pré-selecionadas na <strong>edição de menor valor</strong> para o filtro atual. Clique em <strong>"2. Avaliar Menor Preço no TCGPlayer"</strong> para buscar as listagens ao vivo por idioma e edição no TCGPlayer.</p>
+          </div>
+        </div>
+        <button type="button" id="inlineEvaluateBtn" class="btn btn-tcg btn-sm">💲 Avaliar no TCGPlayer Agora</button>
+      </div>
+
+      <div class="table-responsive">
+        <table class="cards-table" id="cardsTable">
+          <thead>
+            <tr>
+              <th class="col-check">Cotar</th>
+              <th class="col-card">Carta</th>
+              <th class="col-section">Seção</th>
+              <th class="col-qty">Qtd</th>
+              <th class="col-edition">Edição Escolhida (Menor Valor p/ Filtro) &amp; Idioma</th>
+              <th class="col-unit">Menor Unitário (USD)</th>
+              <th class="col-live">Comparativo de Edições &amp; TCGPlayer</th>
+              <th class="col-subtotal">Subtotal (USD)</th>
+              <th class="col-link">TCGPlayer</th>
+            </tr>
+          </thead>
+          <tbody id="cardsTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Floating Card Image Preview Tooltip -->
+  <div id="cardHoverPreview" class="card-hover-preview" hidden>
+    <img id="cardHoverImg" src="" alt="Card preview" />
+    <div id="cardHoverCaption" class="card-hover-caption"></div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toastNotification" class="toast" hidden></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

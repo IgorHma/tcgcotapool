@@ -1,0 +1,13 @@
+{
+  "name": "tcgcotapool",
+  "version": "1.0.0",
+  "description": "Cotador de decks do Fabrary com avaliação de preços no TCGPlayer (USD)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
