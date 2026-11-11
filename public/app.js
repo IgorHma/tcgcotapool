@@ -402,6 +402,7 @@ function applyFiltersToAllItems(clearManualOverrides = false) {
   for (const item of state.items) {
     if (clearManualOverrides) {
       item.manualPrintKey = null;
+      item.versionSplits = null;
     }
 
     // Update inclusion based on section checkboxes unless user manually toggled the row checkbox
@@ -430,6 +431,136 @@ function applyFiltersToAllItems(clearManualOverrides = false) {
     item.selectedPrinting = picked ? picked.printing : item.printings[0] || null;
     item.usedFilterFallback = picked ? picked.usedFallback : false;
   }
+}
+
+/**
+ * Picks the cheapest printing of a card matching a requested foil category ('Normal' | 'Foil' | 'Cold').
+ */
+function pickCheapestPrintingByFoilCategory(item, category = 'Normal') {
+  const all = item.printings || [];
+  if (all.length === 0) return null;
+
+  let pool = [];
+  if (category === 'Normal') {
+    pool = all.filter((p) => (p.foiling || 'Normal') === 'Normal');
+  } else if (category === 'Cold') {
+    pool = all.filter((p) => (p.foiling || '').includes('Cold'));
+    if (pool.length === 0) {
+      pool = all.filter((p) => (p.foiling || 'Normal') !== 'Normal');
+    }
+  } else {
+    // 'Foil': prefer Rainbow Foil or any non-Normal foil
+    pool = all.filter((p) => (p.foiling || 'Normal') !== 'Normal');
+  }
+
+  if (pool.length === 0) {
+    pool = [...all];
+  }
+
+  // Sort by effective price ascending (cheapest first)
+  pool.sort((a, b) => {
+    const pa = getPrintingEffectivePrice(a, state.filters) ?? Infinity;
+    const pb = getPrintingEffectivePrice(b, state.filters) ?? Infinity;
+    return pa - pb;
+  });
+
+  return pool[0] || all[0] || null;
+}
+
+/**
+ * Returns display metadata for a version/foiling tag.
+ */
+function getFoilingBadgeMeta(foilingOrTag) {
+  const str = String(foilingOrTag || 'Normal');
+  if (str.includes('Cold')) {
+    return {
+      category: 'Cold',
+      shortLabel: '❄️ Cold Foil',
+      compactLabel: 'Cold Foil',
+      cssClass: 'foil-cold',
+      qtyTagClass: 'qty-sub-foil',
+    };
+  }
+  if (str.includes('Rainbow') || str.includes('Gold') || str === 'Foil') {
+    return {
+      category: 'Foil',
+      shortLabel: str.includes('Gold') ? '✨ Gold Foil' : '🌈 Foil (RF)',
+      compactLabel: 'Foil',
+      cssClass: str.includes('Gold') ? 'foil-gold' : 'foil-rainbow',
+      qtyTagClass: 'qty-sub-foil',
+    };
+  }
+  return {
+    category: 'Normal',
+    shortLabel: '⚪ Normal',
+    compactLabel: 'Normal',
+    cssClass: 'foil-normal',
+    qtyTagClass: 'qty-sub-normal',
+  };
+}
+
+/**
+ * Initializes or applies a preset for differentiating versions across copies of a card
+ * (e.g., 3 copies -> 2x Foil + 1x Normal).
+ */
+function applyVersionSplitPreset(item, preset = 'auto') {
+  if (!item) return;
+
+  const foilPrinting =
+    pickCheapestPrintingByFoilCategory(item, 'Foil') ||
+    item.selectedPrinting ||
+    item.printings[0];
+  const normalPrinting =
+    pickCheapestPrintingByFoilCategory(item, 'Normal') ||
+    item.selectedPrinting ||
+    item.printings[0];
+
+  const totalQty = Math.max(1, item.quantity || 1);
+  let foilQty = 2;
+  let normalQty = 1;
+
+  if (preset === '2foil1normal') {
+    foilQty = 2;
+    normalQty = 1;
+  } else if (preset === '1foil2normal') {
+    foilQty = 1;
+    normalQty = 2;
+  } else if (preset === '1foil1normal') {
+    foilQty = 1;
+    normalQty = 1;
+  } else {
+    // 'auto' based on current card quantity
+    if (totalQty >= 3) {
+      foilQty = 2;
+      normalQty = totalQty - 2;
+    } else if (totalQty === 2) {
+      foilQty = 1;
+      normalQty = 1;
+    } else {
+      foilQty = 1;
+      normalQty = 1;
+    }
+  }
+
+  item.versionSplits = [
+    {
+      id: `${item.id}-sp-1`,
+      qty: foilQty,
+      printKey: foilPrinting?.print || '',
+      versionTag:
+        foilPrinting?.foiling && foilPrinting.foiling !== 'Normal'
+          ? foilPrinting.foiling
+          : 'Foil',
+    },
+    {
+      id: `${item.id}-sp-2`,
+      qty: normalQty,
+      printKey: normalPrinting?.print || '',
+      versionTag: 'Normal',
+    },
+  ];
+
+  item.quantity = item.versionSplits.reduce((acc, s) => acc + (Number(s.qty) || 0), 0);
 }
 
 /**
@@ -475,7 +606,7 @@ function buildLanguageAwareTcgUrl(item, selectedPrinting, activeLang) {
 }
 
 /**
- * Computes unit price, live metrics, language availability, and subtotal for a single card item.
+ * Computes unit price, live metrics, language availability, per-copy version splits, and subtotal for a single card item.
  */
 function computeItemPricing(item) {
   const tokenCheck = isItemFreeToken(item);
@@ -513,10 +644,68 @@ function computeItemPricing(item) {
 
   const tcgUrl = buildLanguageAwareTcgUrl(item, selectedPrinting, resolvedLanguage);
 
+  const hasVersionSplits = Array.isArray(item.versionSplits) && item.versionSplits.length > 0;
+  let resolvedSplits = [];
+
+  if (hasVersionSplits) {
+    resolvedSplits = item.versionSplits.map((sp, idx) => {
+      const spPrinting =
+        item.printings.find((p) => p.print === sp.printKey) ||
+        selectedPrinting ||
+        item.printings[0] ||
+        null;
+      const spUnit = tokenCheck.isFree
+        ? 0
+        : (getPrintingEffectivePrice(spPrinting, state.filters) ?? 0);
+      const spQty = Math.max(0, Number(sp.qty) || 0);
+      const spSub = tokenCheck.isFree || !item.included ? 0 : spUnit * spQty;
+      const rawFoil = sp.versionTag || spPrinting?.foiling || 'Normal';
+      const badgeMeta = getFoilingBadgeMeta(rawFoil);
+      const spUrl = buildLanguageAwareTcgUrl(item, spPrinting, resolvedLanguage);
+
+      return {
+        id: sp.id || `${item.id}-sp-${idx}`,
+        idx,
+        qty: spQty,
+        printKey: spPrinting?.print || sp.printKey || '',
+        printing: spPrinting,
+        versionTag: rawFoil,
+        badgeMeta,
+        unitPrice: spUnit,
+        subtotal: spSub,
+        tcgUrl: spUrl,
+      };
+    });
+  } else {
+    const rawFoil = selectedPrinting?.foiling || 'Normal';
+    const badgeMeta = getFoilingBadgeMeta(rawFoil);
+    const validU = tokenCheck.isFree
+      ? 0
+      : typeof effectiveUnitPrice === 'number'
+        ? effectiveUnitPrice
+        : 0;
+    resolvedSplits = [
+      {
+        id: `${item.id}-default`,
+        idx: 0,
+        qty: item.quantity,
+        printKey: selectedPrinting?.print || '',
+        printing: selectedPrinting,
+        versionTag: rawFoil,
+        badgeMeta,
+        unitPrice: validU,
+        subtotal: tokenCheck.isFree || !item.included ? 0 : validU * item.quantity,
+        tcgUrl,
+      },
+    ];
+  }
+
   if (tokenCheck.isFree) {
     return {
       isFreeToken: true,
       freeReason: tokenCheck.reason,
+      hasVersionSplits,
+      splits: resolvedSplits,
       unitPrice: 0,
       subtotal: 0,
       printPrice,
@@ -530,13 +719,22 @@ function computeItemPricing(item) {
     };
   }
 
-  const validUnit = typeof effectiveUnitPrice === 'number' ? effectiveUnitPrice : 0;
-  const subtotal = item.included ? validUnit * item.quantity : 0;
+  const totalSplitSubtotal = resolvedSplits.reduce((acc, s) => acc + s.subtotal, 0);
+  const validUnit = hasVersionSplits
+    ? resolvedSplits.length > 0
+      ? Math.min(...resolvedSplits.map((s) => s.unitPrice))
+      : 0
+    : typeof effectiveUnitPrice === 'number'
+      ? effectiveUnitPrice
+      : 0;
+  const subtotal = item.included ? totalSplitSubtotal : 0;
 
   return {
     isFreeToken: false,
     freeReason: null,
-    unitPrice: effectiveUnitPrice,
+    hasVersionSplits,
+    splits: resolvedSplits,
+    unitPrice: hasVersionSplits ? validUnit : effectiveUnitPrice,
     subtotal,
     printPrice,
     marketPrice,
@@ -895,6 +1093,21 @@ function renderCardsTable() {
         <span class="unit-price-val price-free-token">$0.00</span>
         <div class="live-meta-item" style="color: var(--emerald)">${escapeHtml(pricing.freeReason)}</div>
       `;
+    } else if (pricing.hasVersionSplits) {
+      unitPriceHtml = `
+        <div class="unit-split-list">
+          ${pricing.splits
+            .map(
+              (sp) => `
+            <div class="unit-split-item">
+              <span class="live-meta-item"><strong>${sp.qty}x</strong> ${escapeHtml(sp.badgeMeta.compactLabel)}:</span>
+              <strong style="color:#fff;">${formatUsd(sp.unitPrice)}</strong>
+            </div>
+          `
+            )
+            .join('')}
+        </div>
+      `;
     } else if (typeof pricing.unitPrice === 'number') {
       unitPriceHtml = `
         <span class="unit-price-val">${formatUsd(pricing.unitPrice)}</span>
@@ -958,9 +1171,284 @@ function renderCardsTable() {
       subtotalHtml = `<span class="subtotal-val price-free-token">$0.00</span>`;
     } else if (!item.included) {
       subtotalHtml = `<span class="price-pending">$0.00 (Excluída)</span>`;
+    } else if (pricing.hasVersionSplits) {
+      const partsStr = pricing.splits
+        .map((sp) => `${sp.qty}x ${formatUsd(sp.unitPrice)}`)
+        .join(' + ');
+      subtotalHtml = `
+        <span class="subtotal-val">${formatUsd(pricing.subtotal)}</span>
+        <div class="live-meta-item">${escapeHtml(partsStr)}</div>
+      `;
     } else {
       subtotalHtml = `<span class="subtotal-val">${formatUsd(pricing.subtotal)}</span>`;
     }
+
+    // Card copies breakdown right below the card name when differentiated
+    const cardCopiesBreakdownHtml = pricing.hasVersionSplits
+      ? `
+        <div class="card-copies-breakdown">
+          <div class="card-copies-title">${escapeHtml(item.name)} — ${item.quantity} ${
+            item.quantity === 1 ? 'cópia' : 'cópias'
+          }:</div>
+          ${pricing.splits
+            .map(
+              (sp) => `
+            <div class="card-copies-line">
+              <span class="copy-qty-pill">${sp.qty}x</span>
+              <span class="foil-badge ${sp.badgeMeta.cssClass}">${escapeHtml(
+                sp.badgeMeta.shortLabel
+              )}</span>
+              <span class="edition-code-pill">${escapeHtml(sp.printing?.print || 'N/A')}</span>
+              <span class="live-meta-item">${escapeHtml(sp.printing?.set || '')} • <strong>${
+                pricing.isFreeToken ? '$0.00' : formatUsd(sp.unitPrice)
+              }</strong>/un.</span>
+            </div>
+          `
+            )
+            .join('')}
+        </div>
+      `
+      : '';
+
+    // Quantity cell HTML
+    const qtyCellHtml = pricing.hasVersionSplits
+      ? `
+        <div class="qty-split-stack">
+          <span class="qty-total-badge">${item.quantity} ${
+            item.quantity === 1 ? 'cópia' : 'cópias'
+          }</span>
+          ${pricing.splits
+            .map(
+              (sp) =>
+                `<span class="qty-sub-tag ${sp.badgeMeta.qtyTagClass}">${sp.qty}x ${escapeHtml(
+                  sp.badgeMeta.compactLabel
+                )}</span>`
+            )
+            .join('')}
+        </div>
+      `
+      : `
+        <input
+          type="number"
+          min="0"
+          max="99"
+          value="${item.quantity}"
+          class="qty-input"
+          data-item-id="${escapeHtml(item.id)}"
+          title="Quantidade de cópias"
+        />
+      `;
+
+    // Edition cell HTML (Unified vs Differentiated per Copy)
+    let editionCellHtml = '';
+    if (pricing.hasVersionSplits) {
+      const splitRowsHtml = pricing.splits
+        .map((sp, spIdx) => {
+          const spOptionsHtml = sortedPrintings
+            .map((p) => {
+              const isSelected = sp.printKey === p.print ? 'selected' : '';
+              const isCheapest = cheapestInFilter?.print === p.print;
+              return `<option value="${escapeHtml(p.print)}" ${isSelected}>${escapeHtml(
+                formatPrintingOptionLabel(p, isCheapest)
+              )}</option>`;
+            })
+            .join('');
+
+          const cat = sp.badgeMeta.category;
+          return `
+            <div class="version-split-row">
+              <div class="version-split-top">
+                <label class="split-qty-wrap" title="Quantidade de cópias nesta versão">
+                  <input
+                    type="number"
+                    min="1"
+                    max="99"
+                    value="${sp.qty}"
+                    class="split-qty-input"
+                    data-split-item-id="${escapeHtml(item.id)}"
+                    data-split-idx="${spIdx}"
+                  />
+                  <span>x</span>
+                </label>
+                <div class="split-quick-foil-group" role="group" aria-label="Versão da cópia">
+                  <button
+                    type="button"
+                    class="btn-quick-foil ${cat === 'Normal' ? 'active-normal' : ''}"
+                    data-quick-foil-item="${escapeHtml(item.id)}"
+                    data-quick-foil-idx="${spIdx}"
+                    data-quick-foil-type="Normal"
+                    title="Definir estas cópias como Normal (Non-Foil)"
+                  >
+                    ⚪ Normal
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-quick-foil ${cat === 'Foil' ? 'active-foil' : ''}"
+                    data-quick-foil-item="${escapeHtml(item.id)}"
+                    data-quick-foil-idx="${spIdx}"
+                    data-quick-foil-type="Foil"
+                    title="Definir estas cópias como Foil (Rainbow Foil)"
+                  >
+                    🌈 Foil
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-quick-foil ${cat === 'Cold' ? 'active-cold' : ''}"
+                    data-quick-foil-item="${escapeHtml(item.id)}"
+                    data-quick-foil-idx="${spIdx}"
+                    data-quick-foil-type="Cold"
+                    title="Definir estas cópias como Cold Foil"
+                  >
+                    ❄️ Cold
+                  </button>
+                </div>
+                <span class="lang-badge">${langInfo.flag} ${langInfo.short}</span>
+                ${
+                  pricing.splits.length > 1
+                    ? `<button
+                         type="button"
+                         class="btn-remove-split"
+                         data-remove-split-item="${escapeHtml(item.id)}"
+                         data-remove-split-idx="${spIdx}"
+                         title="Remover esta linha de versão"
+                       >✕</button>`
+                    : ''
+                }
+              </div>
+              <select
+                class="split-edition-select"
+                data-split-select-item="${escapeHtml(item.id)}"
+                data-split-select-idx="${spIdx}"
+                title="Escolher coleção/edição específica para estas ${sp.qty} cópias"
+              >
+                ${spOptionsHtml}
+              </select>
+            </div>
+          `;
+        })
+        .join('');
+
+      editionCellHtml = `
+        <div class="version-splits-panel">
+          <div class="version-splits-toolbar">
+            <span class="version-splits-label">🔀 Versões por Cópia (${item.quantity} cópias)</span>
+            <div class="version-preset-btns">
+              <button
+                type="button"
+                class="btn-version-preset"
+                data-preset-item="${escapeHtml(item.id)}"
+                data-preset-type="2foil1normal"
+                title="Definir 2x Foil + 1x Normal"
+              >
+                2x Foil + 1x Normal
+              </button>
+              <button
+                type="button"
+                class="btn-version-preset"
+                data-preset-item="${escapeHtml(item.id)}"
+                data-preset-type="1foil2normal"
+                title="Definir 1x Foil + 2x Normal"
+              >
+                1x Foil + 2x Normal
+              </button>
+              <button
+                type="button"
+                class="btn-version-preset"
+                data-add-split-item="${escapeHtml(item.id)}"
+                title="Adicionar mais uma versão diferente para esta carta"
+              >
+                + Versão
+              </button>
+              <button
+                type="button"
+                class="btn-version-preset btn-version-unify"
+                data-unify-split-item="${escapeHtml(item.id)}"
+                title="Voltar todas as cópias para uma única versão"
+              >
+                ↺ Unificar
+              </button>
+            </div>
+          </div>
+          ${splitRowsHtml}
+        </div>
+      `;
+    } else {
+      const splitBtnLabel =
+        item.quantity >= 3
+          ? '🔀 Diferenciar versões (ex: 2x Foil + 1x Normal)'
+          : item.quantity === 2
+            ? '🔀 Diferenciar versões (ex: 1x Foil + 1x Normal)'
+            : '🔀 Diferenciar versões (Foil / Normal)';
+
+      editionCellHtml = `
+        <div class="edition-select-wrap">
+          <select class="edition-select" data-item-id="${escapeHtml(item.id)}">
+            ${optionsHtml}
+          </select>
+          <div class="edition-badges-row">
+            <span class="lang-badge" title="Idioma considerado na cotação">${langInfo.flag} ${langInfo.short}</span>
+            <span class="foil-badge ${foilingClass}">${escapeHtml(foilingVal)}</span>
+            ${
+              isAutoCheapest
+                ? `<span class="cheapest-lock-badge" title="Menor valor encontrado para o filtro atual">⚡ Menor Valor</span>`
+                : item.manualPrintKey
+                  ? `<span class="live-meta-item" style="color: var(--gold)">• Edição manual</span>`
+                  : ''
+            }
+            <button
+              type="button"
+              class="btn-split-versions"
+              data-split-init-id="${escapeHtml(item.id)}"
+              title="Separar as cópias desta carta em versões diferentes (ex: 2x Foil e 1x Normal)"
+            >
+              ${splitBtnLabel}
+            </button>
+            ${
+              hasMultipleEditions
+                ? `<button type="button" class="btn-compare-editions" data-item-id="${escapeHtml(item.id)}">
+                     🔍 ${isDrawerOpen ? 'Ocultar' : `Comparar ${item.printings.length} edições`}
+                   </button>`
+                : ''
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    // TCGPlayer Link cell HTML
+    const linkCellHtml = pricing.hasVersionSplits
+      ? `
+        <div class="link-split-list">
+          ${pricing.splits
+            .map(
+              (sp) => `
+            <a
+              href="${escapeHtml(sp.tcgUrl)}"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="tcg-link-btn"
+              title="Abrir ${sp.qty}x ${escapeHtml(sp.badgeMeta.compactLabel)} (${escapeHtml(
+                sp.printing?.print || ''
+              )}) no TCGPlayer.com"
+            >
+              ${sp.qty}x ${escapeHtml(sp.badgeMeta.compactLabel)} ↗
+            </a>
+          `
+            )
+            .join('')}
+        </div>
+      `
+      : `
+        <a
+          href="${escapeHtml(pricing.tcgUrl)}"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="tcg-link-btn"
+          title="Abrir esta edição e idioma no TCGPlayer.com"
+        >
+          TCGPlayer ↗
+        </a>
+      `;
 
     tr.innerHTML = `
       <td class="col-check">
@@ -994,6 +1482,7 @@ function renderCardsTable() {
               <span>${escapeHtml(typeSub)}</span>
               ${rarityBadge}
             </div>
+            ${cardCopiesBreakdownHtml}
           </div>
         </div>
       </td>
@@ -1001,54 +1490,16 @@ function renderCardsTable() {
         <span class="section-pill section-${escapeHtml(item.section)}">${escapeHtml(item.sectionLabel)}</span>
       </td>
       <td class="col-qty">
-        <input
-          type="number"
-          min="0"
-          max="99"
-          value="${item.quantity}"
-          class="qty-input"
-          data-item-id="${escapeHtml(item.id)}"
-          title="Quantidade de cópias"
-        />
+        ${qtyCellHtml}
       </td>
       <td class="col-edition">
-        <div class="edition-select-wrap">
-          <select class="edition-select" data-item-id="${escapeHtml(item.id)}">
-            ${optionsHtml}
-          </select>
-          <div class="edition-badges-row">
-            <span class="lang-badge" title="Idioma considerado na cotação">${langInfo.flag} ${langInfo.short}</span>
-            <span class="foil-badge ${foilingClass}">${escapeHtml(foilingVal)}</span>
-            ${
-              isAutoCheapest
-                ? `<span class="cheapest-lock-badge" title="Menor valor encontrado para o filtro atual">⚡ Menor Valor</span>`
-                : item.manualPrintKey
-                  ? `<span class="live-meta-item" style="color: var(--gold)">• Edição manual</span>`
-                  : ''
-            }
-            ${
-              hasMultipleEditions
-                ? `<button type="button" class="btn-compare-editions" data-item-id="${escapeHtml(item.id)}">
-                     🔍 ${isDrawerOpen ? 'Ocultar' : `Comparar ${item.printings.length} edições`}
-                   </button>`
-                : ''
-            }
-          </div>
-        </div>
+        ${editionCellHtml}
       </td>
       <td class="col-unit">${unitPriceHtml}</td>
       <td class="col-live">${liveDetailsHtml}</td>
       <td class="col-subtotal">${subtotalHtml}</td>
       <td class="col-link">
-        <a
-          href="${escapeHtml(pricing.tcgUrl)}"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="tcg-link-btn"
-          title="Abrir esta edição e idioma no TCGPlayer.com"
-        >
-          TCGPlayer ↗
-        </a>
+        ${linkCellHtml}
       </td>
     `;
 
@@ -1263,6 +1714,163 @@ function bindTableRowEvents() {
     });
   });
 
+  // Initialize Per-Copy Version Differentiation (e.g., 3 copies -> 2x Foil + 1x Normal)
+  document.querySelectorAll('[data-split-init-id]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = e.currentTarget.getAttribute('data-split-init-id');
+      const item = state.items.find((i) => i.id === id);
+      if (!item) return;
+      applyVersionSplitPreset(item, 'auto');
+      await ensureLiveTcgForSplits(item);
+      renderDeckHeaderAndCounts();
+      renderCardsTable();
+      renderQuoteSummary();
+      showToast(
+        `🔀 "${item.name}" diferenciada por cópia (${item.versionSplits
+          .map((s) => `${s.qty}x ${getFoilingBadgeMeta(s.versionTag).compactLabel}`)
+          .join(' + ')})!`
+      );
+    });
+  });
+
+  // Quick Presets inside Per-Copy Version Panel (e.g., 2x Foil + 1x Normal, 1x Foil + 2x Normal)
+  document.querySelectorAll('[data-preset-item]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = e.currentTarget.getAttribute('data-preset-item');
+      const preset = e.currentTarget.getAttribute('data-preset-type');
+      const item = state.items.find((i) => i.id === id);
+      if (!item) return;
+      applyVersionSplitPreset(item, preset);
+      await ensureLiveTcgForSplits(item);
+      renderDeckHeaderAndCounts();
+      renderCardsTable();
+      renderQuoteSummary();
+    });
+  });
+
+  // Add another version row for the same card
+  document.querySelectorAll('[data-add-split-item]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = e.currentTarget.getAttribute('data-add-split-item');
+      const item = state.items.find((i) => i.id === id);
+      if (!item || !Array.isArray(item.versionSplits)) return;
+      const normalP =
+        pickCheapestPrintingByFoilCategory(item, 'Normal') ||
+        item.selectedPrinting ||
+        item.printings[0];
+      item.versionSplits.push({
+        id: `${item.id}-sp-${Date.now()}`,
+        qty: 1,
+        printKey: normalP?.print || '',
+        versionTag: normalP?.foiling || 'Normal',
+      });
+      item.quantity = item.versionSplits.reduce((acc, s) => acc + (Number(s.qty) || 0), 0);
+      await ensureLiveTcgForSplits(item);
+      renderDeckHeaderAndCounts();
+      renderCardsTable();
+      renderQuoteSummary();
+    });
+  });
+
+  // Unify all copies back into a single version
+  document.querySelectorAll('[data-unify-split-item]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const id = e.currentTarget.getAttribute('data-unify-split-item');
+      const item = state.items.find((i) => i.id === id);
+      if (!item) return;
+      item.versionSplits = null;
+      renderDeckHeaderAndCounts();
+      renderCardsTable();
+      renderQuoteSummary();
+      showToast(`↺ Cópias de "${item.name}" unificadas na mesma versão.`);
+    });
+  });
+
+  // Remove a single version row from a split card
+  document.querySelectorAll('[data-remove-split-item]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const id = e.currentTarget.getAttribute('data-remove-split-item');
+      const idx = parseInt(e.currentTarget.getAttribute('data-remove-split-idx'), 10);
+      const item = state.items.find((i) => i.id === id);
+      if (!item || !Array.isArray(item.versionSplits)) return;
+      item.versionSplits.splice(idx, 1);
+      if (item.versionSplits.length === 0) {
+        item.versionSplits = null;
+      } else {
+        item.quantity = item.versionSplits.reduce((acc, s) => acc + (Number(s.qty) || 0), 0);
+      }
+      renderDeckHeaderAndCounts();
+      renderCardsTable();
+      renderQuoteSummary();
+    });
+  });
+
+  // Change quantity of a specific version split
+  document.querySelectorAll('.split-qty-input').forEach((inp) => {
+    inp.addEventListener('change', (e) => {
+      const id = e.target.getAttribute('data-split-item-id');
+      const idx = parseInt(e.target.getAttribute('data-split-idx'), 10);
+      const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+      const item = state.items.find((i) => i.id === id);
+      if (!item || !Array.isArray(item.versionSplits) || !item.versionSplits[idx]) return;
+      item.versionSplits[idx].qty = val;
+      item.quantity = item.versionSplits.reduce((acc, s) => acc + (Number(s.qty) || 0), 0);
+      renderDeckHeaderAndCounts();
+      renderCardsTable();
+      renderQuoteSummary();
+    });
+  });
+
+  // Quick toggle Normal / Foil / Cold Foil on a specific version split
+  document.querySelectorAll('[data-quick-foil-item]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = e.currentTarget.getAttribute('data-quick-foil-item');
+      const idx = parseInt(e.currentTarget.getAttribute('data-quick-foil-idx'), 10);
+      const foilType = e.currentTarget.getAttribute('data-quick-foil-type');
+      const item = state.items.find((i) => i.id === id);
+      if (!item || !Array.isArray(item.versionSplits) || !item.versionSplits[idx]) return;
+
+      const bestMatch = pickCheapestPrintingByFoilCategory(item, foilType);
+      if (bestMatch) {
+        item.versionSplits[idx].printKey = bestMatch.print;
+        item.versionSplits[idx].versionTag =
+          foilType === 'Normal'
+            ? 'Normal'
+            : foilType === 'Cold'
+              ? 'Cold'
+              : bestMatch.foiling && bestMatch.foiling !== 'Normal'
+                ? bestMatch.foiling
+                : 'Foil';
+      } else {
+        item.versionSplits[idx].versionTag = foilType;
+      }
+
+      await ensureLiveTcgForSplits(item);
+      renderCardsTable();
+      renderQuoteSummary();
+    });
+  });
+
+  // Change specific printing dropdown on a version split
+  document.querySelectorAll('.split-edition-select').forEach((sel) => {
+    sel.addEventListener('change', async (e) => {
+      const id = e.target.getAttribute('data-split-select-item');
+      const idx = parseInt(e.target.getAttribute('data-split-select-idx'), 10);
+      const printKey = e.target.value;
+      const item = state.items.find((i) => i.id === id);
+      if (!item || !Array.isArray(item.versionSplits) || !item.versionSplits[idx]) return;
+
+      const chosen = item.printings.find((p) => p.print === printKey);
+      if (chosen) {
+        item.versionSplits[idx].printKey = chosen.print;
+        item.versionSplits[idx].versionTag = chosen.foiling || 'Normal';
+        await ensureLiveTcgForSplits(item);
+        renderCardsTable();
+        renderQuoteSummary();
+      }
+    });
+  });
+
   // Toggle inline multi-edition comparison drawer
   document.querySelectorAll('.btn-compare-editions').forEach((btn) => {
     btn.addEventListener('click', (e) => {
@@ -1327,6 +1935,25 @@ async function selectSpecificPrintingForItem(itemId, printKey) {
     renderMultiEditionExamples();
     renderCardsTable();
     renderQuoteSummary();
+  }
+}
+
+async function ensureLiveTcgForSplits(item) {
+  if (!state.hasEvaluatedTcg || !item || !Array.isArray(item.versionSplits)) return;
+  const pids = [];
+  for (const sp of item.versionSplits) {
+    const p = item.printings.find((pr) => pr.print === sp.printKey);
+    const pid = p?.tcgplayer?.productId;
+    if (pid && !state.detailsByProductId[String(pid)]) {
+      pids.push(String(pid));
+    }
+  }
+  if (pids.length > 0) {
+    try {
+      await fetchLiveTcgDetailsForProductIds(pids, state.filters.language);
+    } catch (e) {
+      console.warn('Could not fetch live TCGPlayer details for split printings:', e);
+    }
   }
 }
 
@@ -1454,6 +2081,14 @@ async function handleEvaluateTcgPlayer() {
       if (item.selectedPrinting?.tcgplayer?.productId) {
         productIds.add(String(item.selectedPrinting.tcgplayer.productId));
       }
+      if (Array.isArray(item.versionSplits)) {
+        for (const sp of item.versionSplits) {
+          const spPrint = item.printings.find((pr) => pr.print === sp.printKey);
+          if (spPrint?.tcgplayer?.productId) {
+            productIds.add(String(spPrint.tcgplayer.productId));
+          }
+        }
+      }
     }
 
     await fetchLiveTcgDetailsForProductIds([...productIds], state.filters.language);
@@ -1562,6 +2197,7 @@ function handleResetFilters() {
   state.items.forEach((item) => {
     item.manualCheckOverride = false;
     item.manualPrintKey = null;
+    item.versionSplits = null;
   });
 
   syncFiltersFromControls(true);
@@ -1593,6 +2229,18 @@ async function handleCopyQuoteSummary() {
       lines.push(
         `${item.quantity}x ${item.name} [${printCode} - ${set} - ${foil}] -> $0.00 (TOKEN GRÁTIS)`
       );
+    } else if (pricing.hasVersionSplits) {
+      grandTotal += pricing.subtotal;
+      lines.push(
+        `${item.name} — ${item.quantity} cópias (Subtotal: ${formatUsd(pricing.subtotal)}):`
+      );
+      for (const sp of pricing.splits) {
+        const spCode = sp.printing?.print || 'N/A';
+        const spSet = sp.printing?.set || '';
+        lines.push(
+          `   • ${sp.qty}x ${sp.badgeMeta.compactLabel} [${spCode} - ${spSet} - ${pricing.resolvedLanguage}] -> ${formatUsd(sp.unitPrice)} un. = ${formatUsd(sp.subtotal)}`
+        );
+      }
     } else {
       const unitStr = formatUsd(pricing.unitPrice ?? 0);
       const subStr = formatUsd(pricing.subtotal);
@@ -1644,27 +2292,32 @@ function handleExportCsv() {
 
   for (const item of state.items) {
     const pricing = computeItemPricing(item);
-    const p = item.selectedPrinting || {};
-    const cols = [
-      item.included ? 'Sim' : 'Nao',
-      item.quantity,
-      csvEscape(item.name),
-      item.pitch ?? '',
-      csvEscape(item.sectionLabel),
-      csvEscape(p.print || ''),
-      csvEscape(p.set || ''),
-      csvEscape(p.edition || ''),
-      csvEscape(p.foiling || ''),
-      csvEscape(pricing.resolvedLanguage || 'English'),
-      item.printings.length,
-      csvEscape(p.rarity || item.rarity || ''),
-      pricing.isFreeToken ? 'Sim ($0.00)' : 'Nao',
-      pricing.isFreeToken ? '0.00' : (pricing.unitPrice ?? 0).toFixed(2),
-      (pricing.marketPrice ?? 0).toFixed(2),
-      pricing.subtotal.toFixed(2),
-      csvEscape(pricing.tcgUrl || ''),
-    ];
-    rows.push(cols.join(','));
+    for (const sp of pricing.splits) {
+      const p = sp.printing || item.selectedPrinting || {};
+      const cardLabel = pricing.hasVersionSplits
+        ? `${item.name} (${sp.qty}x ${sp.badgeMeta.compactLabel} de ${item.quantity})`
+        : item.name;
+      const cols = [
+        item.included ? 'Sim' : 'Nao',
+        sp.qty,
+        csvEscape(cardLabel),
+        item.pitch ?? '',
+        csvEscape(item.sectionLabel),
+        csvEscape(p.print || ''),
+        csvEscape(p.set || ''),
+        csvEscape(p.edition || ''),
+        csvEscape(sp.badgeMeta.compactLabel),
+        csvEscape(pricing.resolvedLanguage || 'English'),
+        item.printings.length,
+        csvEscape(p.rarity || item.rarity || ''),
+        pricing.isFreeToken ? 'Sim ($0.00)' : 'Nao',
+        pricing.isFreeToken ? '0.00' : (sp.unitPrice ?? 0).toFixed(2),
+        (pricing.marketPrice ?? 0).toFixed(2),
+        sp.subtotal.toFixed(2),
+        csvEscape(sp.tcgUrl || ''),
+      ];
+      rows.push(cols.join(','));
+    }
   }
 
   const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -1681,7 +2334,7 @@ function handleExportCsv() {
 
 /**
  * Generates and downloads a clean, simple native Excel (.xlsx) spreadsheet without images,
- * listing all cards and their values in USD ($).
+ * listing all cards and their values in USD ($), including differentiated copy versions (e.g., 2x Foil + 1x Normal).
  */
 function handleExportExcel() {
   if (!state.deck || state.items.length === 0) return;
@@ -1692,12 +2345,12 @@ function handleExportExcel() {
   // Header Row (row 1)
   rows.push([
     { type: 'str', value: 'Qtd', style: 1 },
-    { type: 'str', value: 'Carta', style: 1 },
+    { type: 'str', value: 'Carta / Versão', style: 1 },
     { type: 'str', value: 'Pitch', style: 1 },
     { type: 'str', value: 'Seção', style: 1 },
     { type: 'str', value: 'Código da Edição', style: 1 },
     { type: 'str', value: 'Coleção (Set)', style: 1 },
-    { type: 'str', value: 'Foiling', style: 1 },
+    { type: 'str', value: 'Versão / Foiling', style: 1 },
     { type: 'str', value: 'Idioma', style: 1 },
     { type: 'str', value: 'Cobrança', style: 1 },
     { type: 'str', value: 'Valor Unitário (USD)', style: 1 },
@@ -1711,30 +2364,37 @@ function handleExportExcel() {
     if (!item.included || item.quantity <= 0) continue;
 
     const pricing = computeItemPricing(item);
-    const p = item.selectedPrinting || {};
-    const unitVal = pricing.isFreeToken ? 0 : Number((pricing.unitPrice ?? 0).toFixed(2));
-    const subVal = pricing.isFreeToken ? 0 : Number(pricing.subtotal.toFixed(2));
+    for (const sp of pricing.splits) {
+      if (sp.qty <= 0) continue;
+      const p = sp.printing || item.selectedPrinting || {};
+      const unitVal = pricing.isFreeToken ? 0 : Number((sp.unitPrice ?? 0).toFixed(2));
+      const subVal = pricing.isFreeToken ? 0 : Number(sp.subtotal.toFixed(2));
 
-    totalCopies += item.quantity;
-    grandTotal += subVal;
+      totalCopies += sp.qty;
+      grandTotal += subVal;
 
-    rows.push([
-      { type: 'num', value: item.quantity, style: 0 },
-      { type: 'str', value: item.name, style: 0 },
-      { type: 'str', value: pitchLabelMap[item.pitch] || '-', style: 0 },
-      { type: 'str', value: item.sectionLabel, style: 0 },
-      { type: 'str', value: p.print || '-', style: 0 },
-      { type: 'str', value: p.set || '-', style: 0 },
-      { type: 'str', value: p.foiling || 'Normal', style: 0 },
-      { type: 'str', value: pricing.resolvedLanguage || 'English', style: 0 },
-      {
-        type: 'str',
-        value: pricing.isFreeToken ? 'Token (Grátis $0.00)' : 'Cobrada',
-        style: 0,
-      },
-      { type: 'num', value: unitVal, style: 2 },
-      { type: 'num', value: subVal, style: 2 },
-    ]);
+      const cardNameDisplay = pricing.hasVersionSplits
+        ? `${item.name} (${sp.qty}x ${sp.badgeMeta.compactLabel} de ${item.quantity} cópias)`
+        : item.name;
+
+      rows.push([
+        { type: 'num', value: sp.qty, style: 0 },
+        { type: 'str', value: cardNameDisplay, style: 0 },
+        { type: 'str', value: pitchLabelMap[item.pitch] || '-', style: 0 },
+        { type: 'str', value: item.sectionLabel, style: 0 },
+        { type: 'str', value: p.print || '-', style: 0 },
+        { type: 'str', value: p.set || '-', style: 0 },
+        { type: 'str', value: sp.badgeMeta.compactLabel, style: 0 },
+        { type: 'str', value: pricing.resolvedLanguage || 'English', style: 0 },
+        {
+          type: 'str',
+          value: pricing.isFreeToken ? 'Token (Grátis $0.00)' : 'Cobrada',
+          style: 0,
+        },
+        { type: 'num', value: unitVal, style: 2 },
+        { type: 'num', value: subVal, style: 2 },
+      ]);
+    }
   }
 
   const lastDataRowIdx = rows.length;
