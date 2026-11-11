@@ -37,9 +37,7 @@ const state = {
     foiling: 'all', // 'all' | 'Normal' | 'Rainbow' | 'Cold'
     setType: 'all', // 'all' | 'noPromos' | 'firstAlpha' | 'unlimitedRegular'
     priceMetric: 'lowestAvailable', // 'lowestAvailable' | 'printPrice' | 'marketPrice' | 'lowestWithShipping'
-    freeGameTokens: true,
-    freeRarityTokens: true,
-    includedSections: new Set(['main', 'arena', 'inventory', 'hero']),
+    includedSections: new Set(['main', 'arena', 'inventory', 'hero', 'tokens']),
   },
 };
 
@@ -76,8 +74,6 @@ const els = {
   filterFoiling: document.getElementById('filterFoiling'),
   filterSetType: document.getElementById('filterSetType'),
   filterPriceMetric: document.getElementById('filterPriceMetric'),
-  toggleFreeGameTokens: document.getElementById('toggleFreeGameTokens'),
-  toggleFreeRarityTokens: document.getElementById('toggleFreeRarityTokens'),
   sectionToggles: document.querySelectorAll('.section-toggle'),
 
   multiEditionExamplesSection: document.getElementById('multiEditionExamplesSection'),
@@ -101,6 +97,8 @@ const els = {
   brkArena: document.getElementById('brkArena'),
   brkInventory: document.getElementById('brkInventory'),
   brkHero: document.getElementById('brkHero'),
+  brkTokens: document.getElementById('brkTokens'),
+  brkFree: document.getElementById('brkFree'),
 
   cardsListSection: document.getElementById('cardsListSection'),
   cardsTable: document.getElementById('cardsTable'),
@@ -406,13 +404,9 @@ function applyFiltersToAllItems(clearManualOverrides = false) {
       item.versionSplits = null;
     }
 
-    // Update inclusion based on section checkboxes unless user manually toggled the row checkbox
+    // Update inclusion based on section checkboxes unless user manually toggled the row status
     if (!item.manualCheckOverride) {
-      if (item.section === 'tokens' || item.isGameToken) {
-        item.included = true; // Tokens are listed and free ($0.00)
-      } else {
-        item.included = state.filters.includedSections.has(item.section);
-      }
+      item.included = state.filters.includedSections.has(item.section);
     }
 
     const picked = pickBestPrintingForItem(item, state.filters);
@@ -526,24 +520,14 @@ function applyVersionSplitPreset(item, preset = 'auto') {
 }
 
 /**
- * Determines whether a card item is free ($0.00) due to the Token rules.
+ * Determines whether a card item is free ($0.00).
+ * Cards and tokens are only free if the user clicked the Cotar button to mark them as free.
  */
 function isItemFreeToken(item) {
   if (!item) return { isFree: false, reason: null };
-
-  // Rule 1: Game token / Extras section
-  if (state.filters.freeGameTokens && (item.isGameToken || item.section === 'tokens')) {
-    return { isFree: true, reason: 'Token de Jogo (Grátis)' };
+  if (item.isFree) {
+    return { isFree: true, reason: 'Grátis ($0.00)' };
   }
-
-  // Rule 2: Token Rarity card or printing (e.g., Iris of Reality, Token weapons/heroes)
-  if (state.filters.freeRarityTokens) {
-    const selectedRarity = item.selectedPrinting?.rarity || item.rarity;
-    if (item.hasTokenRarity || selectedRarity === 'Token') {
-      return { isFree: true, reason: 'Raridade Token (Grátis)' };
-    }
-  }
-
   return { isFree: false, reason: null };
 }
 
@@ -785,8 +769,7 @@ function renderDeckHeaderAndCounts() {
       tabCounts[item.section] += item.quantity;
     }
 
-    const tokenCheck = isItemFreeToken(item);
-    if (tokenCheck.isFree) {
+    if (item.isFree) {
       tokenCount += item.quantity;
     }
   }
@@ -820,13 +803,8 @@ function renderCardsTable() {
   // Filter items by active tab & search query
   const query = state.searchQuery.trim().toLowerCase();
   const filteredItems = state.items.filter((item) => {
-    if (state.activeTab !== 'all') {
-      if (state.activeTab === 'tokens') {
-        const isTok = isItemFreeToken(item).isFree || item.section === 'tokens';
-        if (!isTok) return false;
-      } else if (item.section !== state.activeTab) {
-        return false;
-      }
+    if (state.activeTab !== 'all' && item.section !== state.activeTab) {
+      return false;
     }
 
     if (query) {
@@ -895,7 +873,7 @@ function renderCardsTable() {
     const pricing = computeItemPricing(item);
     const tr = document.createElement('tr');
     if (!item.included) tr.classList.add('row-excluded');
-    if (pricing.isFreeToken) tr.classList.add('row-token-free');
+    if (pricing.isFreeToken || item.isFree) tr.classList.add('row-card-free');
 
     const activeImg = item.selectedPrinting?.image || item.defaultImage || '';
     const pitchNum = item.pitch === 1 || item.pitch === 2 || item.pitch === 3 ? item.pitch : 0;
@@ -1373,15 +1351,48 @@ function renderCardsTable() {
         </a>
       `;
 
+    const isExcluded = !item.included;
+    const isFree = Boolean(item.included && item.isFree);
+    let quoteBtnHtml = '';
+
+    if (isFree) {
+      quoteBtnHtml = `
+        <button
+          type="button"
+          class="btn-quote-state state-free"
+          data-item-id="${escapeHtml(item.id)}"
+          title="Carta Grátis ($0.00). Clique para Não Cotar"
+        >
+          ✓ Grátis
+        </button>
+      `;
+    } else if (isExcluded) {
+      quoteBtnHtml = `
+        <button
+          type="button"
+          class="btn-quote-state state-exclude"
+          data-item-id="${escapeHtml(item.id)}"
+          title="Carta desmarcada da cotação. Clique para Cotar Normalmente"
+        >
+          ✕ Off
+        </button>
+      `;
+    } else {
+      quoteBtnHtml = `
+        <button
+          type="button"
+          class="btn-quote-state state-normal"
+          data-item-id="${escapeHtml(item.id)}"
+          title="Cotando normalmente. Clique para tornar GRÁTIS ($0.00)"
+        >
+          ✓ Cotar
+        </button>
+      `;
+    }
+
     tr.innerHTML = `
       <td class="col-check">
-        <input
-          type="checkbox"
-          class="row-include-check"
-          data-item-id="${escapeHtml(item.id)}"
-          ${item.included ? 'checked' : ''}
-          title="Incluir ou excluir carta da cotação"
-        />
+        ${quoteBtnHtml}
       </td>
       <td class="col-card">
         <div class="card-cell">
@@ -1579,12 +1590,14 @@ function renderQuoteSummary() {
   // Show the total deck cost when using the most expensive editions
   els.summaryTotalSavings.textContent = formatUsd(totalMaxEditionCost);
   els.summarySavingsSub.textContent = `Economia de ${formatUsd(diffSavings)} em relação à cotação mais barata (${formatUsd(totalSelected)})`;
-  els.summaryCardsChargedSub.textContent = `${chargedCopiesCount} cópias cobradas • ${freeTokenCopiesCount} tokens grátis ($0.00)`;
+  els.summaryCardsChargedSub.textContent = `${chargedCopiesCount} cópias cobradas • ${freeTokenCopiesCount} grátis ($0.00)`;
 
   els.brkMain.textContent = formatUsd(sectionTotals.main);
   els.brkArena.textContent = formatUsd(sectionTotals.arena);
   els.brkInventory.textContent = formatUsd(sectionTotals.inventory);
   els.brkHero.textContent = formatUsd(sectionTotals.hero);
+  if (els.brkTokens) els.brkTokens.textContent = formatUsd(sectionTotals.tokens);
+  if (els.brkFree) els.brkFree.textContent = `$0.00 (${freeTokenCopiesCount} cópias)`;
 
   if (state.hasEvaluatedTcg && state.evaluatedAt) {
     const dt = new Date(state.evaluatedAt);
@@ -1606,16 +1619,31 @@ function renderQuoteSummary() {
  * Attaches event listeners to dynamically rendered table inputs, drawer toggles, and hover previews.
  */
 function bindTableRowEvents() {
-  // Include checkbox change
-  document.querySelectorAll('.row-include-check').forEach((chk) => {
-    chk.addEventListener('change', (e) => {
-      const id = e.target.getAttribute('data-item-id');
+  // 3-state Quote button click (Cotar Normal ➔ Grátis [$0.00 - Verde] ➔ Não Cotar [Off] ➔ Cotar Normal)
+  document.querySelectorAll('.btn-quote-state').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const btnEl = e.target.closest('.btn-quote-state');
+      if (!btnEl) return;
+      const id = btnEl.getAttribute('data-item-id');
       const item = state.items.find((i) => i.id === id);
       if (item) {
-        item.included = e.target.checked;
+        if (!item.included) {
+          // Excluded -> Normal
+          item.included = true;
+          item.isFree = false;
+        } else if (!item.isFree) {
+          // Normal -> Free ($0.00 na cor verde)
+          item.included = true;
+          item.isFree = true;
+        } else {
+          // Free -> Excluded
+          item.included = false;
+          item.isFree = false;
+        }
         item.manualCheckOverride = true;
         renderCardsTable();
         renderQuoteSummary();
+        renderDeckHeaderAndCounts();
       }
     });
   });
@@ -2076,8 +2104,6 @@ async function syncFiltersFromControls(clearManual = false) {
   state.filters.foiling = els.filterFoiling.value;
   state.filters.setType = els.filterSetType.value;
   state.filters.priceMetric = els.filterPriceMetric.value;
-  state.filters.freeGameTokens = els.toggleFreeGameTokens.checked;
-  state.filters.freeRarityTokens = els.toggleFreeRarityTokens.checked;
 
   const included = new Set();
   els.sectionToggles.forEach((chk) => {
@@ -2140,8 +2166,6 @@ function handleResetFilters() {
   els.filterFoiling.value = 'all';
   els.filterSetType.value = 'all';
   els.filterPriceMetric.value = 'lowestAvailable';
-  els.toggleFreeGameTokens.checked = true;
-  els.toggleFreeRarityTokens.checked = true;
   els.sectionToggles.forEach((chk) => {
     chk.checked = true;
   });
@@ -2656,8 +2680,6 @@ function init() {
   els.filterFoiling.addEventListener('change', () => syncFiltersFromControls(true));
   els.filterSetType.addEventListener('change', () => syncFiltersFromControls(true));
   els.filterPriceMetric.addEventListener('change', () => syncFiltersFromControls(false));
-  els.toggleFreeGameTokens.addEventListener('change', () => syncFiltersFromControls(false));
-  els.toggleFreeRarityTokens.addEventListener('change', () => syncFiltersFromControls(false));
   els.sectionToggles.forEach((chk) => {
     chk.addEventListener('change', () => {
       state.items.forEach((i) => {

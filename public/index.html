@@ -27,7 +27,7 @@
       <div class="topbar-badges">
         <span class="pill pill-gold">Moeda: USD ($)</span>
         <span class="pill pill-blue">⚡ Sempre Menor Valor p/ Filtro</span>
-        <span class="pill pill-emerald">Tokens: $0.00 (Grátis)</span>
+        <span class="pill pill-emerald">✓ Cotar / Grátis ($0) / Off</span>
       </div>
     </div>
   </header>
@@ -93,7 +93,7 @@
           </div>
           <div class="count-stat count-stat-token">
             <span class="count-value" id="statTokenCount">0</span>
-            <span class="count-label">Tokens (Grátis)</span>
+            <span class="count-label">Cartas Grátis ($0.00)</span>
           </div>
         </div>
       </div>
@@ -178,22 +178,8 @@
         </div>
       </div>
 
-      <!-- Checkboxes for Tokens & Sections -->
+      <!-- Checkboxes for Sections -->
       <div class="filters-toggles-row">
-        <div class="toggles-block">
-          <span class="toggles-title">Regras de Tokens (Grátis / $0.00):</span>
-          <div class="toggles-list">
-            <label class="checkbox-pill checkbox-pill-emerald" title="Tokens gerados em jogo (ex: Spectral Shield, Lightning Flow) não são cobrados">
-              <input type="checkbox" id="toggleFreeGameTokens" checked />
-              <span>Tokens de Jogo = <strong>$0.00 (Não cobrados)</strong></span>
-            </label>
-            <label class="checkbox-pill checkbox-pill-emerald" title="Cartas cuja raridade é Token (ex: Iris of Reality ou armas/heróis Token) também ficam com preço $0.00">
-              <input type="checkbox" id="toggleFreeRarityTokens" checked />
-              <span>Zerar cartas com Raridade <strong>"Token"</strong> (ex: Armas/Heróis Token)</span>
-            </label>
-          </div>
-        </div>
-
         <div class="toggles-block">
           <span class="toggles-title">Seções Incluídas no Cálculo:</span>
           <div class="toggles-list">
@@ -212,6 +198,10 @@
             <label class="checkbox-pill">
               <input type="checkbox" class="section-toggle" value="hero" checked />
               <span>Herói</span>
+            </label>
+            <label class="checkbox-pill">
+              <input type="checkbox" class="section-toggle" value="tokens" checked />
+              <span>Tokens / Extras</span>
             </label>
           </div>
         </div>
@@ -263,7 +253,8 @@
             <div class="breakdown-row"><span>Arena (Equip./Armas):</span> <strong id="brkArena">$0.00</strong></div>
             <div class="breakdown-row"><span>Inventory (Sideboard):</span> <strong id="brkInventory">$0.00</strong></div>
             <div class="breakdown-row"><span>Herói:</span> <strong id="brkHero">$0.00</strong></div>
-            <div class="breakdown-row breakdown-token"><span>Tokens:</span> <strong>$0.00 (Isento)</strong></div>
+            <div class="breakdown-row"><span>Tokens / Extras:</span> <strong id="brkTokens">$0.00</strong></div>
+            <div class="breakdown-row breakdown-token"><span>Cartas Grátis ($0.00):</span> <strong id="brkFree">$0.00</strong></div>
           </div>
         </div>
       </div>
@@ -277,7 +268,7 @@
           <button type="button" class="tab-btn" data-tab="arena">Arena / Equip. (<span id="tabCountArena">0</span>)</button>
           <button type="button" class="tab-btn" data-tab="main">Deck Principal (<span id="tabCountMain">0</span>)</button>
           <button type="button" class="tab-btn" data-tab="inventory">Inventory / Side (<span id="tabCountInventory">0</span>)</button>
-          <button type="button" class="tab-btn" data-tab="tokens">Tokens Grátis (<span id="tabCountTokens">0</span>)</button>
+          <button type="button" class="tab-btn" data-tab="tokens">Tokens (<span id="tabCountTokens">0</span>)</button>
           <button type="button" class="tab-btn" data-tab="hero">Herói (<span id="tabCountHero">0</span>)</button>
         </div>
 
@@ -340,7 +331,7 @@
         <table class="cards-table" id="cardsTable">
           <thead>
             <tr>
-              <th class="col-check">Cotar</th>
+              <th class="col-check" title="Clique no botão de qualquer carta para alternar: Cotar ➔ Grátis ($0.00) ➔ Não Cotar">Cotar</th>
               <th class="col-card">Carta</th>
               <th class="col-section">Seção</th>
               <th class="col-qty">Qtd</th>

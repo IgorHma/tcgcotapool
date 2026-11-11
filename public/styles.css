@@ -1139,6 +1139,103 @@ body {
   border-right: 1px solid rgba(255, 255, 255, 0.03);
 }
 
+.cards-table tbody tr {
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.12s;
+}
+
+.cards-table tbody tr:hover {
+  background: var(--bg-surface-hover);
+}
+
+.cards-table tbody tr.row-excluded {
+  opacity: 0.42;
+}
+
+.cards-table tbody tr.row-card-free,
+.cards-table tbody tr.row-token-free {
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.cards-table tbody tr.row-card-free:hover,
+.cards-table tbody tr.row-token-free:hover {
+  background: rgba(16, 185, 129, 0.09);
+}
+
+/* Coluna Cotar */
+.cards-table th.col-check,
+.cards-table td.col-check {
+  text-align: center;
+  width: 96px;
+  min-width: 96px;
+}
+
+/* Botão de 3 Estados para Cotar: Cotar Normal ➔ Grátis ($0.00 Verde) ➔ Não Cotar (Off) */
+.btn-quote-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 0.73rem;
+  font-weight: 700;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  user-select: none;
+  width: 100%;
+  max-width: 86px;
+  text-decoration: none;
+}
+
+/* Estado 1: Normal (Cotando normalmente) */
+.btn-quote-state.state-normal {
+  background: rgba(37, 99, 235, 0.15);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.45);
+}
+
+.btn-quote-state.state-normal:hover {
+  background: rgba(37, 99, 235, 0.3);
+  color: #ffffff;
+  border-color: #60a5fa;
+  transform: translateY(-1px);
+}
+
+/* Estado 2: Grátis (Fica na cor VERDE e deixa a carta como grátis $0.00) */
+.btn-quote-state.state-free {
+  background: #059669;
+  color: #ffffff;
+  border: 1px solid #10b981;
+  font-weight: 800;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.45);
+}
+
+.btn-quote-state.state-free:hover {
+  background: #10b981;
+  color: #ffffff;
+  border-color: #34d399;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.6);
+  transform: translateY(-1px);
+}
+
+/* Estado 3: Não Cotar / Excluída da Cotação */
+.btn-quote-state.state-exclude {
+  background: rgba(100, 116, 139, 0.14);
+  color: #94a3b8;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  opacity: 0.85;
+}
+
+.btn-quote-state.state-exclude:hover {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
 /* Colunas destacadas da direita com leve sombreamento visual */
 .cards-table th.col-unit,
 .cards-table td.col-unit {
