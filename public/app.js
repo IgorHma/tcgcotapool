@@ -28,6 +28,7 @@ const state = {
   viewMode: 'compactThumb', // 'compactThumb' | 'visualList' (hide images)
   examplesCollapsed: false,
   expandedCardDrawers: new Set(), // Item IDs with open inline multi-edition drawer
+  closedVersionPanels: new Set(), // Item IDs whose per-copy version box was closed/collapsed
   searchQuery: '',
   sortOrder: 'section',
   filters: {
@@ -500,67 +501,28 @@ function getFoilingBadgeMeta(foilingOrTag) {
 }
 
 /**
- * Initializes or applies a preset for differentiating versions across copies of a card
- * (e.g., 3 copies -> 2x Foil + 1x Normal).
+ * Initializes each individual copy as its own separate line when differentiating versions
+ * (e.g., 3 copies -> Cópia 1 [1x] + Cópia 2 [1x] + Cópia 3 [1x]).
  */
 function applyVersionSplitPreset(item, preset = 'auto') {
   if (!item) return;
 
-  const foilPrinting =
-    pickCheapestPrintingByFoilCategory(item, 'Foil') ||
-    item.selectedPrinting ||
-    item.printings[0];
-  const normalPrinting =
-    pickCheapestPrintingByFoilCategory(item, 'Normal') ||
-    item.selectedPrinting ||
-    item.printings[0];
-
   const totalQty = Math.max(1, item.quantity || 1);
-  let foilQty = 2;
-  let normalQty = 1;
+  const currentPrinting = item.selectedPrinting || item.printings[0];
+  const splits = [];
 
-  if (preset === '2foil1normal') {
-    foilQty = 2;
-    normalQty = 1;
-  } else if (preset === '1foil2normal') {
-    foilQty = 1;
-    normalQty = 2;
-  } else if (preset === '1foil1normal') {
-    foilQty = 1;
-    normalQty = 1;
-  } else {
-    // 'auto' based on current card quantity
-    if (totalQty >= 3) {
-      foilQty = 2;
-      normalQty = totalQty - 2;
-    } else if (totalQty === 2) {
-      foilQty = 1;
-      normalQty = 1;
-    } else {
-      foilQty = 1;
-      normalQty = 1;
-    }
+  for (let i = 0; i < totalQty; i++) {
+    splits.push({
+      id: `${item.id}-copy-${i + 1}`,
+      copyNum: i + 1,
+      qty: 1,
+      printKey: currentPrinting?.print || '',
+      versionTag: currentPrinting?.foiling || 'Normal',
+    });
   }
 
-  item.versionSplits = [
-    {
-      id: `${item.id}-sp-1`,
-      qty: foilQty,
-      printKey: foilPrinting?.print || '',
-      versionTag:
-        foilPrinting?.foiling && foilPrinting.foiling !== 'Normal'
-          ? foilPrinting.foiling
-          : 'Foil',
-    },
-    {
-      id: `${item.id}-sp-2`,
-      qty: normalQty,
-      printKey: normalPrinting?.print || '',
-      versionTag: 'Normal',
-    },
-  ];
-
-  item.quantity = item.versionSplits.reduce((acc, s) => acc + (Number(s.qty) || 0), 0);
+  item.versionSplits = splits;
+  item.quantity = totalQty;
 }
 
 /**
@@ -771,104 +733,9 @@ function formatPrintingOptionLabel(p, isLowestInFilter = false) {
  * Renders the Multi-Edition Examples Panel showing cards with the same name in different editions.
  */
 function renderMultiEditionExamples() {
-  if (!state.items || state.items.length === 0) {
+  if (els.multiEditionExamplesSection) {
     els.multiEditionExamplesSection.hidden = true;
-    return;
   }
-
-  // Pick cards with multiple printings/editions and a meaningful price difference across editions
-  const multiEditionCards = state.items
-    .filter((item) => !isItemFreeToken(item).isFree && item.printings.length >= 3)
-    .map((item) => {
-      const priced = item.printings
-        .map((p) => ({
-          printing: p,
-          price: getPrintingEffectivePrice(p, state.filters),
-          matchesFilter: doesPrintingMatchFilters(p, state.filters),
-        }))
-        .filter((x) => typeof x.price === 'number' && x.price > 0);
-
-      const prices = priced.map((x) => x.price);
-      const minP = prices.length ? Math.min(...prices) : 0;
-      const maxP = prices.length ? Math.max(...prices) : 0;
-      const uniqueSets = new Set(item.printings.map((p) => p.set)).size;
-      return {
-        item,
-        priced,
-        minP,
-        maxP,
-        spread: maxP - minP,
-        uniqueSets,
-      };
-    })
-    .filter((entry) => entry.uniqueSets >= 2 || entry.item.printings.length >= 3)
-    .sort((a, b) => b.item.printings.length - a.item.printings.length || b.spread - a.spread)
-    .slice(0, 4);
-
-  if (multiEditionCards.length === 0) {
-    els.multiEditionExamplesSection.hidden = true;
-    return;
-  }
-
-  els.multiEditionExamplesSection.hidden = false;
-  els.multiEditionExamplesGrid.hidden = state.examplesCollapsed;
-
-  const langInfo = getLanguageInfo(state.filters.language);
-
-  els.multiEditionExamplesGrid.innerHTML = multiEditionCards
-    .map(({ item, minP, maxP, uniqueSets }) => {
-      const chosenPrint = item.selectedPrinting?.print;
-      const pitchDot =
-        item.pitch === 1 || item.pitch === 2 || item.pitch === 3
-          ? `<span class="pitch-dot pitch-${item.pitch}"></span>`
-          : '';
-
-      const variantsHtml = item.printings
-        .map((p) => {
-          const effPrice = getPrintingEffectivePrice(p, state.filters);
-          const isChosen = p.print === chosenPrint;
-          const matches = doesPrintingMatchFilters(p, state.filters);
-          const foilShort =
-            p.foiling === 'Rainbow' ? 'RF' : p.foiling === 'Cold' ? 'CF' : 'Normal';
-          const edLabel = p.edition ? ` • ${p.edition}` : '';
-
-          return `
-            <div class="edition-variant-row ${isChosen ? 'is-chosen-cheapest' : ''} ${
-              !matches ? 'is-filtered-out' : ''
-            }">
-              <div class="edition-variant-left">
-                <span class="edition-code-pill">${escapeHtml(p.print)}</span>
-                <span class="edition-set-name" title="${escapeHtml(p.set)}${escapeHtml(edLabel)}">
-                  ${escapeHtml(p.set)}${escapeHtml(edLabel)} (${foilShort})
-                </span>
-              </div>
-              <div class="edition-variant-right">
-                ${isChosen ? `<span class="chosen-cheapest-badge">✓ Cotada (${langInfo.short})</span>` : ''}
-                <strong>${typeof effPrice === 'number' ? formatUsd(effPrice) : 'S/ Preço'}</strong>
-              </div>
-            </div>
-          `;
-        })
-        .join('');
-
-      return `
-        <div class="edition-example-card">
-          <div class="edition-example-top">
-            <div class="edition-example-name">
-              ${pitchDot}
-              <span>${escapeHtml(item.name)}</span>
-            </div>
-            <span class="edition-count-tag">
-              ${item.printings.length} edições (${uniqueSets} coleções) • ${formatUsd(minP)} a ${formatUsd(maxP)}
-            </span>
-          </div>
-          <div class="edition-variants-list">
-            ${variantsHtml}
-          </div>
-        </div>
-      `;
-    })
-    .join('');
 }
 
 /**
@@ -1202,6 +1069,16 @@ function renderCardsTable() {
               <span class="live-meta-item">${escapeHtml(sp.printing?.set || '')} • <strong>${
                 pricing.isFreeToken ? '$0.00' : formatUsd(sp.unitPrice)
               }</strong>/un.</span>
+              <a
+                href="${escapeHtml(sp.tcgUrl)}"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="tcg-link-btn"
+                style="padding: 1px 6px; font-size: 0.67rem; margin-left: 4px;"
+                title="Abrir esta versão no TCGPlayer.com"
+              >
+                TCGPlayer ↗
+              </a>
             </div>
           `
             )
@@ -1241,7 +1118,52 @@ function renderCardsTable() {
 
     // Edition cell HTML (Unified vs Differentiated per Copy)
     let editionCellHtml = '';
-    if (pricing.hasVersionSplits) {
+    const isPanelClosed = state.closedVersionPanels.has(item.id);
+
+    if (pricing.hasVersionSplits && isPanelClosed) {
+      // Differentiated versions are saved, but panel is closed/minimized
+      const summaryBadges = pricing.splits
+        .map(
+          (sp) =>
+            `<span class="qty-sub-tag ${sp.badgeMeta.qtyTagClass}">${sp.qty}x ${escapeHtml(
+              sp.badgeMeta.compactLabel
+            )} (${escapeHtml(sp.printing?.print || '')})</span>`
+        )
+        .join(' ');
+
+      editionCellHtml = `
+        <div class="edition-select-wrap">
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            ${summaryBadges}
+          </div>
+          <div class="edition-badges-row" style="margin-top: 4px;">
+            <button
+              type="button"
+              class="btn-edit-splits"
+              data-reopen-split-item="${escapeHtml(item.id)}"
+              title="Abrir painel para alterar versões destas cópias"
+            >
+              ✏️ Alterar Versões (${item.quantity}x)
+            </button>
+            <button
+              type="button"
+              class="btn-version-preset btn-version-unify"
+              data-unify-split-item="${escapeHtml(item.id)}"
+              title="Voltar todas as cópias para uma única versão"
+            >
+              ↺ Unificar
+            </button>
+            ${
+              hasMultipleEditions
+                ? `<button type="button" class="btn-compare-editions" data-item-id="${escapeHtml(item.id)}">
+                     🔍 ${isDrawerOpen ? 'Ocultar' : `Comparar ${item.printings.length} edições`}
+                   </button>`
+                : ''
+            }
+          </div>
+        </div>
+      `;
+    } else if (pricing.hasVersionSplits) {
       const splitRowsHtml = pricing.splits
         .map((sp, spIdx) => {
           const spOptionsHtml = sortedPrintings
@@ -1255,9 +1177,11 @@ function renderCardsTable() {
             .join('');
 
           const cat = sp.badgeMeta.category;
+          const copyLabel = sp.copyNum ? `Cópia ${sp.copyNum}` : `Cópia ${spIdx + 1}`;
           return `
             <div class="version-split-row">
               <div class="version-split-top">
+                <span class="copy-qty-pill" style="padding: 2px 7px; font-size: 0.72rem;">${copyLabel}</span>
                 <label class="split-qty-wrap" title="Quantidade de cópias nesta versão">
                   <input
                     type="number"
@@ -1277,7 +1201,7 @@ function renderCardsTable() {
                     data-quick-foil-item="${escapeHtml(item.id)}"
                     data-quick-foil-idx="${spIdx}"
                     data-quick-foil-type="Normal"
-                    title="Definir estas cópias como Normal (Non-Foil)"
+                    title="Definir esta cópia como Normal (Non-Foil)"
                   >
                     ⚪ Normal
                   </button>
@@ -1287,7 +1211,7 @@ function renderCardsTable() {
                     data-quick-foil-item="${escapeHtml(item.id)}"
                     data-quick-foil-idx="${spIdx}"
                     data-quick-foil-type="Foil"
-                    title="Definir estas cópias como Foil (Rainbow Foil)"
+                    title="Definir esta cópia como Foil (Rainbow Foil)"
                   >
                     🌈 Foil
                   </button>
@@ -1297,12 +1221,22 @@ function renderCardsTable() {
                     data-quick-foil-item="${escapeHtml(item.id)}"
                     data-quick-foil-idx="${spIdx}"
                     data-quick-foil-type="Cold"
-                    title="Definir estas cópias como Cold Foil"
+                    title="Definir esta cópia como Cold Foil"
                   >
                     ❄️ Cold
                   </button>
                 </div>
                 <span class="lang-badge">${langInfo.flag} ${langInfo.short}</span>
+                <a
+                  href="${escapeHtml(sp.tcgUrl)}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="tcg-link-btn"
+                  style="padding: 2px 7px; font-size: 0.7rem;"
+                  title="Conferir anúncio e preço desta cópia no TCGPlayer"
+                >
+                  TCGPlayer ↗
+                </a>
                 ${
                   pricing.splits.length > 1
                     ? `<button
@@ -1310,7 +1244,7 @@ function renderCardsTable() {
                          class="btn-remove-split"
                          data-remove-split-item="${escapeHtml(item.id)}"
                          data-remove-split-idx="${spIdx}"
-                         title="Remover esta linha de versão"
+                         title="Remover esta cópia"
                        >✕</button>`
                     : ''
                 }
@@ -1319,7 +1253,7 @@ function renderCardsTable() {
                 class="split-edition-select"
                 data-split-select-item="${escapeHtml(item.id)}"
                 data-split-select-idx="${spIdx}"
-                title="Escolher coleção/edição específica para estas ${sp.qty} cópias"
+                title="Escolher coleção/edição específica para esta cópia"
               >
                 ${spOptionsHtml}
               </select>
@@ -1336,24 +1270,6 @@ function renderCardsTable() {
               <button
                 type="button"
                 class="btn-version-preset"
-                data-preset-item="${escapeHtml(item.id)}"
-                data-preset-type="2foil1normal"
-                title="Definir 2x Foil + 1x Normal"
-              >
-                2x Foil + 1x Normal
-              </button>
-              <button
-                type="button"
-                class="btn-version-preset"
-                data-preset-item="${escapeHtml(item.id)}"
-                data-preset-type="1foil2normal"
-                title="Definir 1x Foil + 2x Normal"
-              >
-                1x Foil + 2x Normal
-              </button>
-              <button
-                type="button"
-                class="btn-version-preset"
                 data-add-split-item="${escapeHtml(item.id)}"
                 title="Adicionar mais uma versão diferente para esta carta"
               >
@@ -1367,18 +1283,21 @@ function renderCardsTable() {
               >
                 ↺ Unificar
               </button>
+              <button
+                type="button"
+                class="btn-version-preset btn-version-close"
+                data-close-split-item="${escapeHtml(item.id)}"
+                title="Salvar e fechar esta caixa de seleção"
+              >
+                ✓ Fechar Caixa
+              </button>
             </div>
           </div>
           ${splitRowsHtml}
         </div>
       `;
     } else {
-      const splitBtnLabel =
-        item.quantity >= 3
-          ? '🔀 Diferenciar versões (ex: 2x Foil + 1x Normal)'
-          : item.quantity === 2
-            ? '🔀 Diferenciar versões (ex: 1x Foil + 1x Normal)'
-            : '🔀 Diferenciar versões (Foil / Normal)';
+      const splitBtnLabel = '🔀 Diferenciar versões';
 
       editionCellHtml = `
         <div class="edition-select-wrap">
@@ -1395,14 +1314,18 @@ function renderCardsTable() {
                   ? `<span class="live-meta-item" style="color: var(--gold)">• Edição manual</span>`
                   : ''
             }
-            <button
-              type="button"
-              class="btn-split-versions"
-              data-split-init-id="${escapeHtml(item.id)}"
-              title="Separar as cópias desta carta em versões diferentes (ex: 2x Foil e 1x Normal)"
-            >
-              ${splitBtnLabel}
-            </button>
+            ${
+              hasMultipleEditions && item.quantity > 1
+                ? `<button
+                     type="button"
+                     class="btn-split-versions"
+                     data-split-init-id="${escapeHtml(item.id)}"
+                     title="Separar as cópias desta carta em versões diferentes"
+                   >
+                     ${splitBtnLabel}
+                   </button>`
+                : ''
+            }
             ${
               hasMultipleEditions
                 ? `<button type="button" class="btn-compare-editions" data-item-id="${escapeHtml(item.id)}">
@@ -1496,7 +1419,6 @@ function renderCardsTable() {
         ${editionCellHtml}
       </td>
       <td class="col-unit">${unitPriceHtml}</td>
-      <td class="col-live">${liveDetailsHtml}</td>
       <td class="col-subtotal">${subtotalHtml}</td>
       <td class="col-link">
         ${linkCellHtml}
@@ -1552,7 +1474,7 @@ function renderCardsTable() {
         .join('');
 
       drawerTr.innerHTML = `
-        <td colspan="9">
+        <td colspan="8">
           <div class="drawer-inner">
             <div class="drawer-header">
               <span>🔍 Todas as ${item.printings.length} edições encontradas para "${escapeHtml(item.name)}" (Clique em qualquer edição para alternar):</span>
@@ -1628,10 +1550,17 @@ function renderQuoteSummary() {
     const mktUnit = pricing.marketPrice ?? pricing.unitPrice ?? 0;
     totalMarket += mktUnit * item.quantity;
 
-    const maxUnit =
-      typeof item.maxFilterPrice === 'number' && item.maxFilterPrice > (pricing.unitPrice ?? 0)
-        ? item.maxFilterPrice
-        : pricing.unitPrice ?? 0;
+    // Pick the most expensive printing/edition available on TCGPlayer for this card
+    const pricedPrintings = (item.printings || [])
+      .map((p) => getPrintingEffectivePrice(p, state.filters))
+      .filter((pr) => typeof pr === 'number' && pr > 0);
+
+    const maxUnit = pricedPrintings.length > 0
+      ? Math.max(...pricedPrintings)
+      : (typeof item.maxFilterPrice === 'number' && item.maxFilterPrice > 0
+          ? item.maxFilterPrice
+          : (pricing.unitPrice ?? 0));
+
     totalMaxEditionCost += maxUnit * item.quantity;
 
     if (sectionTotals[item.section] !== undefined) {
@@ -1643,12 +1572,13 @@ function renderQuoteSummary() {
     massEntryParts.push(`${item.quantity} ${tcgName}`);
   }
 
-  const totalSavings = Math.max(0, totalMaxEditionCost - totalSelected);
+  const diffSavings = Math.max(0, totalMaxEditionCost - totalSelected);
 
   els.summaryTotalSelected.textContent = formatUsd(totalSelected);
   els.summaryTotalMarket.textContent = formatUsd(totalMarket);
-  els.summaryTotalSavings.textContent = formatUsd(totalSavings);
-  els.summarySavingsSub.textContent = `Economia ao cotar a edição mais barata (vs ${formatUsd(totalMaxEditionCost)} nas edições mais caras)`;
+  // Show the total deck cost when using the most expensive editions
+  els.summaryTotalSavings.textContent = formatUsd(totalMaxEditionCost);
+  els.summarySavingsSub.textContent = `Economia de ${formatUsd(diffSavings)} em relação à cotação mais barata (${formatUsd(totalSelected)})`;
   els.summaryCardsChargedSub.textContent = `${chargedCopiesCount} cópias cobradas • ${freeTokenCopiesCount} tokens grátis ($0.00)`;
 
   els.brkMain.textContent = formatUsd(sectionTotals.main);
@@ -1720,6 +1650,7 @@ function bindTableRowEvents() {
       const id = e.currentTarget.getAttribute('data-split-init-id');
       const item = state.items.find((i) => i.id === id);
       if (!item) return;
+      state.closedVersionPanels.delete(id);
       applyVersionSplitPreset(item, 'auto');
       await ensureLiveTcgForSplits(item);
       renderDeckHeaderAndCounts();
@@ -1730,6 +1661,27 @@ function bindTableRowEvents() {
           .map((s) => `${s.qty}x ${getFoilingBadgeMeta(s.versionTag).compactLabel}`)
           .join(' + ')})!`
       );
+    });
+  });
+
+  // Reopen closed Per-Copy Version Panel to edit versions again
+  document.querySelectorAll('[data-reopen-split-item]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const id = e.currentTarget.getAttribute('data-reopen-split-item');
+      if (!id) return;
+      state.closedVersionPanels.delete(id);
+      renderCardsTable();
+    });
+  });
+
+  // Close / Minimize Per-Copy Version Panel
+  document.querySelectorAll('[data-close-split-item]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const id = e.currentTarget.getAttribute('data-close-split-item');
+      if (!id) return;
+      state.closedVersionPanels.add(id);
+      renderCardsTable();
+      showToast('✓ Versões salvas e caixa fechada.');
     });
   });
 

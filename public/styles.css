@@ -1081,13 +1081,34 @@ body {
 
 /* Table */
 .table-responsive {
-  overflow-x: auto;
+  overflow-x: scroll;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
+  position: relative;
+  /* Scrollbar customizada e visível */
+  scrollbar-width: auto;
+  scrollbar-color: var(--accent-gold) rgba(15, 23, 42, 0.8);
+}
+
+.table-responsive::-webkit-scrollbar {
+  height: 12px;
+}
+
+.table-responsive::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.8);
+  border-radius: 6px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+  background: var(--accent-gold);
+  border-radius: 6px;
+  border: 2px solid rgba(15, 23, 42, 0.8);
 }
 
 .cards-table {
   width: 100%;
+  min-width: 1300px;
+  table-layout: auto;
   border-collapse: collapse;
   text-align: left;
   font-size: 0.84rem;
@@ -1096,6 +1117,9 @@ body {
 .cards-table thead {
   background: var(--bg-surface-elevated);
   border-bottom: 1px solid var(--border-subtle);
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .cards-table th {
@@ -1106,32 +1130,31 @@ body {
   letter-spacing: 0.4px;
   color: var(--text-secondary);
   white-space: nowrap;
-}
-
-.cards-table tbody tr {
-  border-bottom: 1px solid var(--border-subtle);
-  transition: background 0.12s;
-}
-
-.cards-table tbody tr:last-child {
-  border-bottom: none;
-}
-
-.cards-table tbody tr:hover {
-  background: var(--bg-surface-hover);
-}
-
-.cards-table tbody tr.row-excluded {
-  opacity: 0.45;
-}
-
-.cards-table tbody tr.row-token-free {
-  background: rgba(16, 185, 129, 0.045);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .cards-table td {
   padding: 8px 12px;
   vertical-align: middle;
+  border-right: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+/* Colunas destacadas da direita com leve sombreamento visual */
+.cards-table th.col-unit,
+.cards-table td.col-unit {
+  background: rgba(16, 185, 129, 0.02);
+}
+
+.cards-table th.col-subtotal,
+.cards-table td.col-subtotal {
+  background: rgba(16, 185, 129, 0.05);
+  font-weight: bold;
+}
+
+.cards-table th.col-link,
+.cards-table td.col-link {
+  background: rgba(37, 99, 235, 0.04);
+  text-align: center;
 }
 
 /* Compact Visual List Mode (When Images Are Hidden) */
@@ -1693,6 +1716,35 @@ body {
   background: rgba(59, 130, 246, 0.25);
   color: #fff;
   border-color: rgba(59, 130, 246, 0.5);
+}
+
+.btn-version-close {
+  background: rgba(16, 185, 129, 0.16);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.45);
+}
+
+.btn-version-close:hover {
+  background: rgba(16, 185, 129, 0.3);
+  color: #fff;
+  border-color: #34d399;
+}
+
+.btn-edit-splits {
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-edit-splits:hover {
+  background: rgba(59, 130, 246, 0.3);
+  color: #fff;
 }
 
 .btn-version-unify {

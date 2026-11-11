@@ -218,25 +218,6 @@
       </div>
     </section>
 
-    <!-- MULTI-EDITION EXAMPLES PANEL (Same Card Name across Different Editions) -->
-    <section id="multiEditionExamplesSection" class="card-panel multi-edition-panel" hidden>
-      <div class="multi-edition-header">
-        <div>
-          <div class="multi-edition-title-row">
-            <span class="badge badge-edition-highlight">🔍 Mesmo Nome • Edições Diferentes</span>
-            <h3 class="multi-edition-title">Exemplos no Deck: Cartas com Múltiplas Edições (Cotadas pelo Menor Valor do Filtro)</h3>
-          </div>
-          <p class="multi-edition-desc">
-            Cartas com o mesmo nome (e mesmo pitch) frequentemente saem em coleções diferentes (ex: <em>Booster Set</em> vs <em>Armory Deck</em> vs <em>History Pack</em> vs <em>Promo GEM/LGS</em>) com preços muito diferentes. Veja como o filtro seleciona sempre a <strong>edição mais barata</strong> compatível:
-          </p>
-        </div>
-        <button type="button" id="toggleExamplesBodyBtn" class="btn btn-secondary btn-sm">
-          Ocultar Exemplos ▲
-        </button>
-      </div>
-      <div id="multiEditionExamplesGrid" class="multi-edition-grid"></div>
-    </section>
-
     <!-- STEP 3: TCGPLAYER QUOTE SUMMARY DASHBOARD (Shown after evaluation) -->
     <section id="quoteSummarySection" class="quote-summary-panel" hidden>
       <div class="quote-summary-header">
@@ -264,9 +245,9 @@
         </div>
 
         <div class="summary-metric-card">
-          <span class="summary-metric-label">Economia vs Edições Mais Caras</span>
+          <span class="summary-metric-label">Valor com Edições Mais Caras (TCGPlayer)</span>
           <div class="summary-metric-value summary-metric-savings" id="summaryTotalSavings">$0.00</div>
-          <span class="summary-metric-sub" id="summarySavingsSub">Cotando sempre a edição mais barata do filtro</span>
+          <span class="summary-metric-sub" id="summarySavingsSub">Valor do deck listado pelas versões mais caras</span>
         </div>
 
         <div class="summary-metric-card">
@@ -349,23 +330,22 @@
           <span class="pre-eval-icon">ℹ️</span>
           <div>
             <strong>Lista carregada com sucesso do Fabrary!</strong>
-            <p>Todas as cartas já estão pré-selecionadas na <strong>edição de menor valor</strong> para o filtro atual. Use o botão <strong>"🔀 Diferenciar versões (ex: 2x Foil + 1x Normal)"</strong> em qualquer carta para separar cópias em versões diferentes, ou clique em <strong>"2. Avaliar Menor Preço no TCGPlayer"</strong> para listagens ao vivo.</p>
+            <p>Todas as cartas já estão pré-selecionadas na <strong>edição de menor valor</strong> para o filtro atual. Use o botão <strong>"🔀 Diferenciar versões"</strong> em qualquer carta para separar cópias em versões diferentes, ou clique em <strong>"2. Avaliar Menor Preço no TCGPlayer"</strong> para listagens ao vivo.</p>
           </div>
         </div>
         <button type="button" id="inlineEvaluateBtn" class="btn btn-tcg btn-sm">💲 Avaliar no TCGPlayer Agora</button>
       </div>
 
-      <div class="table-responsive">
+      <div class="table-responsive" id="tableResponsiveContainer">
         <table class="cards-table" id="cardsTable">
           <thead>
             <tr>
               <th class="col-check">Cotar</th>
-              <th class="col-card">Carta &amp; Versões das Cópias</th>
+              <th class="col-card">Carta</th>
               <th class="col-section">Seção</th>
               <th class="col-qty">Qtd</th>
-              <th class="col-edition">Edição / Versão por Cópia (Ex: 2x Foil + 1x Normal)</th>
+              <th class="col-edition">Edição / Versão por Cópia</th>
               <th class="col-unit">Menor Unitário (USD)</th>
-              <th class="col-live">Comparativo de Edições &amp; TCGPlayer</th>
               <th class="col-subtotal">Subtotal (USD)</th>
               <th class="col-link">TCGPlayer</th>
             </tr>
