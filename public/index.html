@@ -241,6 +241,12 @@
           <span class="summary-metric-sub" id="summaryCardsChargedSub">0 cartas cobradas • 0 tokens grátis</span>
         </div>
 
+        <div class="summary-metric-card summary-metric-x7">
+          <span class="summary-metric-label">Valor da Pool (USD × 7)</span>
+          <div class="summary-metric-value summary-metric-x7-value" id="summaryTotalX7">R$ 0,00</div>
+          <span class="summary-metric-sub" id="summaryTotalX7Sub">$0.00 × 7</span>
+        </div>
+
         <div class="summary-metric-card">
           <span class="summary-metric-label">Valor com Edições Mais Caras (TCGPlayer)</span>
           <div class="summary-metric-value summary-metric-savings" id="summaryTotalSavings">$0.00</div>
@@ -316,6 +322,67 @@
           >
             🚫 Genéricas: Cotar
           </button>
+          <button
+            type="button"
+            id="btnToggleCommonFreeQuick"
+            class="btn-toggle-common-quick"
+            title="Alternar: Não cobrar cartas de raridade Common (deixar Grátis / $0.00)"
+          >
+            🏷️ Common: Cobrar
+          </button>
+          <button
+            type="button"
+            id="btnToggleTokensFreeQuick"
+            class="btn-toggle-common-quick active"
+            title="Alternar: Não cobrar Tokens (deixar Grátis / $0.00)"
+          >
+            🪙 Tokens: Grátis
+          </button>
+          <button
+            type="button"
+            id="btnToggleHeroFreeQuick"
+            class="btn-toggle-common-quick active"
+            title="Alternar: Não cobrar Herói (deixar Grátis / $0.00)"
+          >
+            🦸 Herói: Grátis
+          </button>
+          <div
+            class="free-below-control"
+            title="Deixar como Grátis/Incluso ($0.00) cartas com preço unitário menor que o valor em USD"
+          >
+            <span class="free-below-prefix">Grátis &lt; $</span>
+            <div class="num-stepper num-stepper-emerald">
+              <button
+                type="button"
+                class="num-step-btn"
+                data-step-dir="-1"
+                aria-label="Diminuir valor"
+              >−</button>
+              <input
+                type="number"
+                id="freeBelowInput"
+                class="free-below-input"
+                min="0"
+                step="0.05"
+                value="0.50"
+                aria-label="Valor mínimo em USD para deixar grátis"
+              />
+              <button
+                type="button"
+                class="num-step-btn"
+                data-step-dir="1"
+                aria-label="Aumentar valor"
+              >+</button>
+            </div>
+            <button
+              type="button"
+              id="btnFreeBelowQuick"
+              class="btn-free-below-quick"
+              title="Clique para deixar Grátis/Incluso ($0.00) todas as cartas que custem menos que este valor"
+            >
+              🎁 Aplicar
+            </button>
+          </div>
           <div class="search-box">
             <span>🔍</span>
             <input type="text" id="cardSearchInput" placeholder="Filtrar por nome, código ou coleção..." />

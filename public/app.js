@@ -38,6 +38,11 @@ const state = {
     setType: 'all', // 'all' | 'noPromos' | 'firstAlpha' | 'unlimitedRegular'
     priceMetric: 'lowestAvailable', // 'lowestAvailable' | 'printPrice' | 'marketPrice' | 'lowestWithShipping'
     excludeGeneric: false, // Quando true, deixa todas as cartas do tipo Generic em OFF (não cotar)
+    freeBelowActive: false, // Quando true, cartas abaixo de freeBelowValue ficam Grátis/Incluso ($0.00)
+    freeBelowValue: 0.5,
+    freeCommonActive: false, // Quando true, cartas de raridade Common ficam Grátis ($0.00)
+    freeTokensActive: true, // Quando true, Tokens ficam Grátis ($0.00) por padrão
+    freeHeroActive: true, // Quando true, Herói fica Grátis ($0.00) por padrão
     includedSections: new Set(['main', 'arena', 'inventory', 'hero', 'tokens']),
   },
 };
@@ -79,6 +84,11 @@ const els = {
   toggleExcludeGeneric: document.getElementById('toggleExcludeGeneric'),
   labelExcludeGeneric: document.getElementById('labelExcludeGeneric'),
   btnToggleGenericQuick: document.getElementById('btnToggleGenericQuick'),
+  btnToggleCommonFreeQuick: document.getElementById('btnToggleCommonFreeQuick'),
+  btnToggleTokensFreeQuick: document.getElementById('btnToggleTokensFreeQuick'),
+  btnToggleHeroFreeQuick: document.getElementById('btnToggleHeroFreeQuick'),
+  freeBelowInput: document.getElementById('freeBelowInput'),
+  btnFreeBelowQuick: document.getElementById('btnFreeBelowQuick'),
 
   multiEditionExamplesSection: document.getElementById('multiEditionExamplesSection'),
   multiEditionExamplesGrid: document.getElementById('multiEditionExamplesGrid'),
@@ -93,6 +103,8 @@ const els = {
   activeMetricLabel: document.getElementById('activeMetricLabel'),
   summaryTotalSelected: document.getElementById('summaryTotalSelected'),
   summaryCardsChargedSub: document.getElementById('summaryCardsChargedSub'),
+  summaryTotalX7: document.getElementById('summaryTotalX7'),
+  summaryTotalX7Sub: document.getElementById('summaryTotalX7Sub'),
   summaryTotalSavings: document.getElementById('summaryTotalSavings'),
   summarySavingsSub: document.getElementById('summarySavingsSub'),
   summaryTotalMarket: document.getElementById('summaryTotalMarket'),
@@ -150,6 +162,18 @@ function formatUsd(amount) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function formatBrl(amount) {
+  if (typeof amount !== 'number' || Number.isNaN(amount)) {
+    return '—';
+  }
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount);
@@ -572,6 +596,27 @@ function isItemFreeToken(item) {
   return { isFree: false, reason: null };
 }
 
+function isPrintingCommon(printing, item) {
+  const r = String(printing?.rarity || item?.rarity || '').trim().toLowerCase();
+  return r === 'common' || r === 'c';
+}
+
+function isItemToken(printing, item) {
+  if (!item) return false;
+  if (item.section === 'tokens') return true;
+  const r = String(printing?.rarity || item?.rarity || '').trim().toLowerCase();
+  if (r === 'token' || r === 't') return true;
+  const typeTxt = String(item?.typeText || '').toLowerCase();
+  return typeTxt.includes('token');
+}
+
+function isItemHero(item) {
+  if (!item) return false;
+  if (item.section === 'hero') return true;
+  const typeTxt = String(item?.typeText || '').toLowerCase();
+  return typeTxt.includes('hero');
+}
+
 /**
  * Builds a language-aware TCGPlayer URL for the selected printing.
  */
@@ -634,6 +679,12 @@ function computeItemPricing(item) {
   const hasVersionSplits = Array.isArray(item.versionSplits) && item.versionSplits.length > 0;
   let resolvedSplits = [];
 
+  const threshold = state.filters.freeBelowValue;
+  const thresholdActive = Boolean(state.filters.freeBelowActive && Number.isFinite(threshold) && threshold >= 0);
+  const commonFreeActive = Boolean(state.filters.freeCommonActive);
+  const tokensFreeActive = Boolean(state.filters.freeTokensActive);
+  const heroFreeActive = Boolean(state.filters.freeHeroActive);
+
   if (hasVersionSplits) {
     resolvedSplits = item.versionSplits.map((sp, idx) => {
       const spPrinting =
@@ -641,11 +692,15 @@ function computeItemPricing(item) {
         selectedPrinting ||
         item.printings[0] ||
         null;
-      const spUnit = tokenCheck.isFree
-        ? 0
-        : (getPrintingEffectivePrice(spPrinting, state.filters) ?? 0);
+      const rawSpUnit = getPrintingEffectivePrice(spPrinting, state.filters) ?? 0;
+      const spFreeByThreshold = Boolean(!tokenCheck.isFree && thresholdActive && item.included && rawSpUnit < threshold);
+      const spFreeByCommon = Boolean(!tokenCheck.isFree && commonFreeActive && item.included && isPrintingCommon(spPrinting, item));
+      const spFreeByToken = Boolean(!tokenCheck.isFree && tokensFreeActive && item.included && isItemToken(spPrinting, item));
+      const spFreeByHero = Boolean(!tokenCheck.isFree && heroFreeActive && item.included && isItemHero(item));
+      const spFreeAuto = spFreeByThreshold || spFreeByCommon || spFreeByToken || spFreeByHero;
+      const spUnit = tokenCheck.isFree || spFreeAuto ? 0 : rawSpUnit;
       const spQty = Math.max(0, Number(sp.qty) || 0);
-      const spSub = tokenCheck.isFree || !item.included ? 0 : spUnit * spQty;
+      const spSub = tokenCheck.isFree || spFreeAuto || !item.included ? 0 : spUnit * spQty;
       const rawFoil = sp.versionTag || spPrinting?.foiling || 'Normal';
       const badgeMeta = getFoilingBadgeMeta(rawFoil);
       const spUrl = buildLanguageAwareTcgUrl(item, spPrinting, resolvedLanguage);
@@ -660,17 +715,24 @@ function computeItemPricing(item) {
         badgeMeta,
         unitPrice: spUnit,
         subtotal: spSub,
+        isFreeByThreshold: spFreeByThreshold,
+        isFreeByCommon: spFreeByCommon,
+        isFreeByToken: spFreeByToken,
+        isFreeByHero: spFreeByHero,
+        isFreeAuto: spFreeAuto,
         tcgUrl: spUrl,
       };
     });
   } else {
     const rawFoil = selectedPrinting?.foiling || 'Normal';
     const badgeMeta = getFoilingBadgeMeta(rawFoil);
-    const validU = tokenCheck.isFree
-      ? 0
-      : typeof effectiveUnitPrice === 'number'
-        ? effectiveUnitPrice
-        : 0;
+    const rawUnit = typeof effectiveUnitPrice === 'number' ? effectiveUnitPrice : 0;
+    const freeByThreshold = Boolean(!tokenCheck.isFree && thresholdActive && item.included && rawUnit < threshold);
+    const freeByCommon = Boolean(!tokenCheck.isFree && commonFreeActive && item.included && isPrintingCommon(selectedPrinting, item));
+    const freeByToken = Boolean(!tokenCheck.isFree && tokensFreeActive && item.included && isItemToken(selectedPrinting, item));
+    const freeByHero = Boolean(!tokenCheck.isFree && heroFreeActive && item.included && isItemHero(item));
+    const freeAuto = freeByThreshold || freeByCommon || freeByToken || freeByHero;
+    const validU = tokenCheck.isFree || freeAuto ? 0 : rawUnit;
     resolvedSplits = [
       {
         id: `${item.id}-default`,
@@ -681,16 +743,38 @@ function computeItemPricing(item) {
         versionTag: rawFoil,
         badgeMeta,
         unitPrice: validU,
-        subtotal: tokenCheck.isFree || !item.included ? 0 : validU * item.quantity,
+        subtotal: tokenCheck.isFree || freeAuto || !item.included ? 0 : validU * item.quantity,
+        isFreeByThreshold: freeByThreshold,
+        isFreeByCommon: freeByCommon,
+        isFreeByToken: freeByToken,
+        isFreeByHero: freeByHero,
+        isFreeAuto: freeAuto,
         tcgUrl,
       },
     ];
   }
 
-  if (tokenCheck.isFree) {
+  const allFreeAuto = Boolean(
+    !tokenCheck.isFree &&
+      (thresholdActive || commonFreeActive || tokensFreeActive || heroFreeActive) &&
+      item.included &&
+      resolvedSplits.length > 0 &&
+      resolvedSplits.every((sp) => sp.isFreeAuto)
+  );
+
+  if (tokenCheck.isFree || allFreeAuto) {
+    let autoReason = '';
+    if (!tokenCheck.isFree) {
+      const reasons = [];
+      if (resolvedSplits.some((sp) => sp.isFreeByToken)) reasons.push('Token');
+      if (resolvedSplits.some((sp) => sp.isFreeByHero)) reasons.push('Herói');
+      if (resolvedSplits.some((sp) => sp.isFreeByCommon)) reasons.push('Common');
+      if (resolvedSplits.some((sp) => sp.isFreeByThreshold)) reasons.push(`< $${threshold.toFixed(2)}`);
+      autoReason = `Grátis (${reasons.join(' / ')})`;
+    }
     return {
       isFreeToken: true,
-      freeReason: tokenCheck.reason,
+      freeReason: tokenCheck.isFree ? tokenCheck.reason : autoReason,
       hasVersionSplits,
       splits: resolvedSplits,
       unitPrice: 0,
@@ -840,6 +924,70 @@ function renderDeckHeaderAndCounts() {
       els.btnToggleGenericQuick.classList.remove('active');
       els.btnToggleGenericQuick.innerHTML = `🚫 Genéricas: Cotar (${genericCopies})`;
       els.btnToggleGenericQuick.title = 'Clique para deixar OFF todas as cartas Genéricas.';
+    }
+  }
+
+  if (els.btnToggleCommonFreeQuick) {
+    const commonCopies = state.items
+      .filter((i) => isPrintingCommon(i.selectedPrinting, i))
+      .reduce((acc, i) => acc + (i.quantity || 1), 0);
+    if (state.filters.freeCommonActive) {
+      els.btnToggleCommonFreeQuick.classList.add('active');
+      els.btnToggleCommonFreeQuick.innerHTML = `🏷️ Common: <strong>Grátis (${commonCopies})</strong>`;
+      els.btnToggleCommonFreeQuick.title = 'Cartas Common estão Grátis ($0.00). Clique para voltar a cobrar.';
+    } else {
+      els.btnToggleCommonFreeQuick.classList.remove('active');
+      els.btnToggleCommonFreeQuick.innerHTML = `🏷️ Common: Cobrar (${commonCopies})`;
+      els.btnToggleCommonFreeQuick.title = 'Clique para não cobrar cartas de raridade Common (deixar Grátis / $0.00).';
+    }
+  }
+
+  if (els.btnToggleTokensFreeQuick) {
+    const tokenCopies = state.items
+      .filter((i) => isItemToken(i.selectedPrinting, i))
+      .reduce((acc, i) => acc + (i.quantity || 1), 0);
+    if (state.filters.freeTokensActive) {
+      els.btnToggleTokensFreeQuick.classList.add('active');
+      els.btnToggleTokensFreeQuick.innerHTML = `🪙 Tokens: <strong>Grátis (${tokenCopies})</strong>`;
+      els.btnToggleTokensFreeQuick.title = 'Tokens estão Grátis ($0.00). Clique para voltar a cobrar.';
+    } else {
+      els.btnToggleTokensFreeQuick.classList.remove('active');
+      els.btnToggleTokensFreeQuick.innerHTML = `🪙 Tokens: Cobrar (${tokenCopies})`;
+      els.btnToggleTokensFreeQuick.title = 'Clique para não cobrar Tokens (deixar Grátis / $0.00).';
+    }
+  }
+
+  if (els.btnToggleHeroFreeQuick) {
+    const heroCopies = state.items
+      .filter((i) => isItemHero(i))
+      .reduce((acc, i) => acc + (i.quantity || 1), 0);
+    if (state.filters.freeHeroActive) {
+      els.btnToggleHeroFreeQuick.classList.add('active');
+      els.btnToggleHeroFreeQuick.innerHTML = `🦸 Herói: <strong>Grátis (${heroCopies})</strong>`;
+      els.btnToggleHeroFreeQuick.title = 'Herói está Grátis ($0.00). Clique para voltar a cobrar.';
+    } else {
+      els.btnToggleHeroFreeQuick.classList.remove('active');
+      els.btnToggleHeroFreeQuick.innerHTML = `🦸 Herói: Cobrar (${heroCopies})`;
+      els.btnToggleHeroFreeQuick.title = 'Clique para não cobrar Herói (deixar Grátis / $0.00).';
+    }
+  }
+
+  if (els.btnFreeBelowQuick) {
+    const thresholdCount = state.filters.freeBelowActive
+      ? state.items.reduce((acc, item) => {
+          if (!item.included) return acc;
+          const pricing = computeItemPricing(item);
+          return acc + pricing.splits.filter((sp) => sp.isFreeByThreshold).reduce((s, sp) => s + sp.qty, 0);
+        }, 0)
+      : 0;
+    if (state.filters.freeBelowActive) {
+      els.btnFreeBelowQuick.classList.add('active');
+      els.btnFreeBelowQuick.innerHTML = `🎁 Grátis: <strong>ON (${thresholdCount})</strong>`;
+      els.btnFreeBelowQuick.title = `Cartas abaixo de $${state.filters.freeBelowValue.toFixed(2)} estão Grátis/Inclusas. Clique para desativar.`;
+    } else {
+      els.btnFreeBelowQuick.classList.remove('active');
+      els.btnFreeBelowQuick.textContent = '🎁 Aplicar';
+      els.btnFreeBelowQuick.title = 'Clique para deixar Grátis/Incluso ($0.00) todas as cartas que custem menos que este valor.';
     }
   }
 }
@@ -1006,7 +1154,7 @@ function renderCardsTable() {
               (sp) => `
             <div class="unit-split-item">
               <span class="live-meta-item"><strong>${sp.qty}x</strong> ${escapeHtml(sp.badgeMeta.compactLabel)}:</span>
-              <strong style="color:#fff;">${formatUsd(sp.unitPrice)}</strong>
+              <strong style="color:${sp.isFreeAuto ? 'var(--emerald)' : '#fff'};">${sp.isFreeAuto ? '$0.00 (Grátis)' : formatUsd(sp.unitPrice)}</strong>
             </div>
           `
             )
@@ -1143,15 +1291,19 @@ function renderCardsTable() {
         </div>
       `
       : `
-        <input
-          type="number"
-          min="0"
-          max="99"
-          value="${item.quantity}"
-          class="qty-input"
-          data-item-id="${escapeHtml(item.id)}"
-          title="Quantidade de cópias"
-        />
+        <div class="num-stepper num-stepper-compact">
+          <button type="button" class="num-step-btn" data-step-dir="-1" aria-label="Diminuir quantidade">−</button>
+          <input
+            type="number"
+            min="0"
+            max="99"
+            value="${item.quantity}"
+            class="qty-input"
+            data-item-id="${escapeHtml(item.id)}"
+            title="Quantidade de cópias"
+          />
+          <button type="button" class="num-step-btn" data-step-dir="1" aria-label="Aumentar quantidade">+</button>
+        </div>
       `;
 
     // Edition cell HTML (Unified vs Differentiated per Copy)
@@ -1221,15 +1373,19 @@ function renderCardsTable() {
               <div class="version-split-top">
                 <span class="copy-qty-pill" style="padding: 2px 7px; font-size: 0.72rem;">${copyLabel}</span>
                 <label class="split-qty-wrap" title="Quantidade de cópias nesta versão">
-                  <input
-                    type="number"
-                    min="1"
-                    max="99"
-                    value="${sp.qty}"
-                    class="split-qty-input"
-                    data-split-item-id="${escapeHtml(item.id)}"
-                    data-split-idx="${spIdx}"
-                  />
+                  <div class="num-stepper num-stepper-mini">
+                    <button type="button" class="num-step-btn" data-step-dir="-1" aria-label="Diminuir cópias">−</button>
+                    <input
+                      type="number"
+                      min="1"
+                      max="99"
+                      value="${sp.qty}"
+                      class="split-qty-input"
+                      data-split-item-id="${escapeHtml(item.id)}"
+                      data-split-idx="${spIdx}"
+                    />
+                    <button type="button" class="num-step-btn" data-step-dir="1" aria-label="Aumentar cópias">+</button>
+                  </div>
                   <span>x</span>
                 </label>
                 <div class="split-quick-foil-group" role="group" aria-label="Versão da cópia">
@@ -1614,7 +1770,11 @@ function renderQuoteSummary() {
       continue;
     }
 
-    chargedCopiesCount += item.quantity;
+    const splitFreeCopies = (pricing.splits || [])
+      .filter((sp) => sp.isFreeAuto)
+      .reduce((acc, sp) => acc + (sp.qty || 0), 0);
+    freeTokenCopiesCount += splitFreeCopies;
+    chargedCopiesCount += Math.max(0, item.quantity - splitFreeCopies);
     totalSelected += pricing.subtotal;
 
     const mktUnit = pricing.marketPrice ?? pricing.unitPrice ?? 0;
@@ -1641,6 +1801,12 @@ function renderQuoteSummary() {
   const diffSavings = Math.max(0, totalMaxEditionCost - totalSelected);
 
   els.summaryTotalSelected.textContent = formatUsd(totalSelected);
+  if (els.summaryTotalX7) {
+    els.summaryTotalX7.textContent = formatBrl(totalSelected * 7);
+  }
+  if (els.summaryTotalX7Sub) {
+    els.summaryTotalX7Sub.textContent = `${formatUsd(totalSelected)} × 7`;
+  }
   els.summaryTotalMarket.textContent = formatUsd(totalMarket);
   // Show the total deck cost when using the most expensive editions
   els.summaryTotalSavings.textContent = formatUsd(totalMaxEditionCost);
@@ -1687,6 +1853,7 @@ function bindTableRowEvents() {
           item.included = false;
           item.isFree = false;
         }
+        item.freeByThreshold = false;
         item.manualCheckOverride = true;
         renderCardsTable();
         renderQuoteSummary();
@@ -2239,6 +2406,124 @@ function setExcludeGeneric(enabled) {
 }
 
 /**
+ * Marks all included cards with unit price below `threshold` as free/included ($0.00),
+ * or reverts cards that were marked free by this threshold filter.
+ */
+function setFreeBelowThreshold(enabled, threshold, silent = false) {
+  const numVal = typeof threshold === 'number' ? threshold : parseFloat(String(els.freeBelowInput?.value || '0').replace(',', '.'));
+  if (enabled && (!Number.isFinite(numVal) || numVal < 0)) {
+    showToast('⚠️ Informe um valor válido em USD (ex: 0.50).');
+    return;
+  }
+
+  state.filters.freeBelowActive = Boolean(enabled);
+  if (Number.isFinite(numVal) && numVal >= 0) {
+    state.filters.freeBelowValue = numVal;
+  }
+
+  let markedCount = 0;
+  if (state.filters.freeBelowActive) {
+    for (const item of state.items) {
+      if (!item.included) continue;
+      const pricing = computeItemPricing(item);
+      markedCount += pricing.splits
+        .filter((sp) => sp.isFreeByThreshold)
+        .reduce((acc, sp) => acc + (sp.qty || 0), 0);
+    }
+  }
+
+  renderDeckHeaderAndCounts();
+  renderCardsTable();
+  renderQuoteSummary();
+
+  if (!silent) {
+    showToast(
+      state.filters.freeBelowActive
+        ? `🎁 ${markedCount} cópia(s) abaixo de $${state.filters.freeBelowValue.toFixed(2)} definidas como Grátis/Incluso ($0.00).`
+        : '✓ Filtro "Grátis abaixo do valor" desativado.'
+    );
+  }
+}
+
+/**
+ * Marks all included Common-rarity cards/splits as free ($0.00) or reverts them.
+ */
+function setFreeCommon(enabled) {
+  state.filters.freeCommonActive = Boolean(enabled);
+
+  let markedCount = 0;
+  if (state.filters.freeCommonActive) {
+    for (const item of state.items) {
+      if (!item.included) continue;
+      const pricing = computeItemPricing(item);
+      markedCount += pricing.splits
+        .filter((sp) => sp.isFreeByCommon)
+        .reduce((acc, sp) => acc + (sp.qty || 0), 0);
+    }
+  }
+
+  renderDeckHeaderAndCounts();
+  renderCardsTable();
+  renderQuoteSummary();
+
+  showToast(
+    state.filters.freeCommonActive
+      ? `🏷️ ${markedCount} cópia(s) Common definidas como Grátis ($0.00).`
+      : '✓ Cartas Common voltaram a ser cobradas.'
+  );
+}
+
+function setFreeTokens(enabled) {
+  state.filters.freeTokensActive = Boolean(enabled);
+
+  let markedCount = 0;
+  if (state.filters.freeTokensActive) {
+    for (const item of state.items) {
+      if (!item.included) continue;
+      const pricing = computeItemPricing(item);
+      markedCount += pricing.splits
+        .filter((sp) => sp.isFreeByToken)
+        .reduce((acc, sp) => acc + (sp.qty || 0), 0);
+    }
+  }
+
+  renderDeckHeaderAndCounts();
+  renderCardsTable();
+  renderQuoteSummary();
+
+  showToast(
+    state.filters.freeTokensActive
+      ? `🪙 ${markedCount} Token(s) definidos como Grátis ($0.00).`
+      : '✓ Tokens voltaram a ser cobrados.'
+  );
+}
+
+function setFreeHero(enabled) {
+  state.filters.freeHeroActive = Boolean(enabled);
+
+  let markedCount = 0;
+  if (state.filters.freeHeroActive) {
+    for (const item of state.items) {
+      if (!item.included) continue;
+      const pricing = computeItemPricing(item);
+      markedCount += pricing.splits
+        .filter((sp) => sp.isFreeByHero)
+        .reduce((acc, sp) => acc + (sp.qty || 0), 0);
+    }
+  }
+
+  renderDeckHeaderAndCounts();
+  renderCardsTable();
+  renderQuoteSummary();
+
+  showToast(
+    state.filters.freeHeroActive
+      ? `🦸 Herói definido como Grátis ($0.00).`
+      : '✓ Herói voltou a ser cobrado.'
+  );
+}
+
+/**
  * Resets all Step 2 filters to default values.
  */
 function handleResetFilters() {
@@ -2249,6 +2534,16 @@ function handleResetFilters() {
   els.filterPriceMetric.value = 'lowestAvailable';
   if (els.toggleExcludeGeneric) els.toggleExcludeGeneric.checked = false;
   state.filters.excludeGeneric = false;
+  state.filters.freeBelowActive = false;
+  state.filters.freeCommonActive = false;
+  state.filters.freeTokensActive = true;
+  state.filters.freeHeroActive = true;
+  for (const item of state.items) {
+    if (item.freeByThreshold) {
+      item.isFree = false;
+      item.freeByThreshold = false;
+    }
+  }
   els.sectionToggles.forEach((chk) => {
     chk.checked = true;
   });
@@ -2409,13 +2704,10 @@ function handleExportExcel() {
       'Qtd',
       'Carta / Versão',
       'Pitch',
-      'Seção',
       'Tipo / Classe',
       'Código da Edição',
       'Coleção (Set)',
       'Versão / Foiling',
-      'Idioma',
-      'Cobrança',
       'Valor Unitário (USD)',
       'Valor Total (USD)',
       'Link TCGPlayer',
@@ -2449,13 +2741,10 @@ function handleExportExcel() {
           sp.qty,
           cardNameDisplay,
           pitchLabelMap[item.pitch] || '-',
-          item.sectionLabel || item.section || '-',
           item.typeText || (Array.isArray(item.classes) ? item.classes.join(', ') : '-'),
           p.print || '-',
           p.set || '-',
           foilLabel,
-          pricing.resolvedLanguage || 'English',
-          isFree ? 'Grátis ($0.00)' : 'Cobrada',
           unitVal,
           subVal,
           sp.tcgUrl || pricing.tcgUrl || '',
@@ -2467,9 +2756,6 @@ function handleExportExcel() {
     data.push([
       totalCopies,
       'TOTAL GERAL DA LISTA (USD)',
-      '',
-      '',
-      '',
       '',
       '',
       '',
@@ -2490,13 +2776,10 @@ function handleExportExcel() {
         { wch: 6 },
         { wch: 34 },
         { wch: 14 },
-        { wch: 22 },
         { wch: 24 },
         { wch: 16 },
         { wch: 24 },
         { wch: 14 },
-        { wch: 10 },
-        { wch: 16 },
         { wch: 20 },
         { wch: 20 },
         { wch: 45 },
@@ -2521,7 +2804,7 @@ function handleExportExcel() {
     }
 
     // 2. Fallback: Pure JS OpenXML generation with safe deferred URL revocation
-    const colWidths = [8, 30, 14, 24, 24, 16, 24, 14, 10, 16, 20, 20, 45];
+    const colWidths = [8, 30, 14, 24, 16, 24, 14, 20, 20, 45];
     const openXmlRows = data.map((row, rIdx) => {
       const isHeaderOrTotal = rIdx === 0 || rIdx === data.length - 1;
       return row.map((val, cIdx) => {
@@ -2797,14 +3080,16 @@ function init() {
   els.btnViewCompactThumb.addEventListener('click', () => setViewMode('compactThumb'));
   els.btnViewVisualList.addEventListener('click', () => setViewMode('visualList'));
 
-  // Toggle Multi-Edition Examples Panel
-  els.toggleExamplesBodyBtn.addEventListener('click', () => {
-    state.examplesCollapsed = !state.examplesCollapsed;
-    els.multiEditionExamplesGrid.hidden = state.examplesCollapsed;
-    els.toggleExamplesBodyBtn.textContent = state.examplesCollapsed
-      ? 'Mostrar Exemplos ▼'
-      : 'Ocultar Exemplos ▲';
-  });
+  // Toggle Multi-Edition Examples Panel (if present)
+  if (els.toggleExamplesBodyBtn && els.multiEditionExamplesGrid) {
+    els.toggleExamplesBodyBtn.addEventListener('click', () => {
+      state.examplesCollapsed = !state.examplesCollapsed;
+      els.multiEditionExamplesGrid.hidden = state.examplesCollapsed;
+      els.toggleExamplesBodyBtn.textContent = state.examplesCollapsed
+        ? 'Mostrar Exemplos ▼'
+        : 'Ocultar Exemplos ▲';
+    });
+  }
 
   // Step 2 Evaluation buttons
   els.evaluateTcgBtn.addEventListener('click', handleEvaluateTcgPlayer);
@@ -2839,6 +3124,121 @@ function init() {
       setExcludeGeneric(!state.filters.excludeGeneric);
     });
   }
+
+  if (els.btnToggleCommonFreeQuick) {
+    els.btnToggleCommonFreeQuick.addEventListener('click', () => {
+      setFreeCommon(!state.filters.freeCommonActive);
+    });
+  }
+
+  if (els.btnToggleTokensFreeQuick) {
+    els.btnToggleTokensFreeQuick.addEventListener('click', () => {
+      setFreeTokens(!state.filters.freeTokensActive);
+    });
+  }
+
+  if (els.btnToggleHeroFreeQuick) {
+    els.btnToggleHeroFreeQuick.addEventListener('click', () => {
+      setFreeHero(!state.filters.freeHeroActive);
+    });
+  }
+
+  if (els.btnToggleCommonFreeQuick) {
+    const commonCopies = state.items
+      .filter((i) => isPrintingCommon(i.selectedPrinting, i))
+      .reduce((acc, i) => acc + (i.quantity || 1), 0);
+    if (state.filters.freeCommonActive) {
+      els.btnToggleCommonFreeQuick.classList.add('active');
+      els.btnToggleCommonFreeQuick.innerHTML = `🏷️ Common: <strong>Grátis (${commonCopies})</strong>`;
+      els.btnToggleCommonFreeQuick.title = 'Cartas Common estão Grátis ($0.00). Clique para voltar a cobrar.';
+    } else {
+      els.btnToggleCommonFreeQuick.classList.remove('active');
+      els.btnToggleCommonFreeQuick.innerHTML = `🏷️ Common: Cobrar (${commonCopies})`;
+      els.btnToggleCommonFreeQuick.title = 'Clique para não cobrar cartas de raridade Common (deixar Grátis / $0.00).';
+    }
+  }
+
+  if (els.btnToggleTokensFreeQuick) {
+    const tokenCopies = state.items
+      .filter((i) => isItemToken(i.selectedPrinting, i))
+      .reduce((acc, i) => acc + (i.quantity || 1), 0);
+    if (state.filters.freeTokensActive) {
+      els.btnToggleTokensFreeQuick.classList.add('active');
+      els.btnToggleTokensFreeQuick.innerHTML = `🪙 Tokens: <strong>Grátis (${tokenCopies})</strong>`;
+      els.btnToggleTokensFreeQuick.title = 'Tokens estão Grátis ($0.00). Clique para voltar a cobrar.';
+    } else {
+      els.btnToggleTokensFreeQuick.classList.remove('active');
+      els.btnToggleTokensFreeQuick.innerHTML = `🪙 Tokens: Cobrar (${tokenCopies})`;
+      els.btnToggleTokensFreeQuick.title = 'Clique para não cobrar Tokens (deixar Grátis / $0.00).';
+    }
+  }
+
+  if (els.btnToggleHeroFreeQuick) {
+    const heroCopies = state.items
+      .filter((i) => isItemHero(i))
+      .reduce((acc, i) => acc + (i.quantity || 1), 0);
+    if (state.filters.freeHeroActive) {
+      els.btnToggleHeroFreeQuick.classList.add('active');
+      els.btnToggleHeroFreeQuick.innerHTML = `🦸 Herói: <strong>Grátis (${heroCopies})</strong>`;
+      els.btnToggleHeroFreeQuick.title = 'Herói está Grátis ($0.00). Clique para voltar a cobrar.';
+    } else {
+      els.btnToggleHeroFreeQuick.classList.remove('active');
+      els.btnToggleHeroFreeQuick.innerHTML = `🦸 Herói: Cobrar (${heroCopies})`;
+      els.btnToggleHeroFreeQuick.title = 'Clique para não cobrar Herói (deixar Grátis / $0.00).';
+    }
+  }
+
+  if (els.btnFreeBelowQuick) {
+    els.btnFreeBelowQuick.addEventListener('click', () => {
+      setFreeBelowThreshold(!state.filters.freeBelowActive);
+    });
+  }
+
+  if (els.freeBelowInput) {
+    els.freeBelowInput.addEventListener('input', () => {
+      if (state.filters.freeBelowActive) {
+        const val = parseFloat(String(els.freeBelowInput.value || '0').replace(',', '.'));
+        if (Number.isFinite(val) && val >= 0) {
+          setFreeBelowThreshold(true, val, true);
+        }
+      }
+    });
+    els.freeBelowInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        setFreeBelowThreshold(true);
+      }
+    });
+  }
+
+  // Delegated click handler for all custom dark-theme number steppers (- / +)
+  document.addEventListener('click', (e) => {
+    const stepBtn = e.target.closest('.num-step-btn');
+    if (!stepBtn) return;
+    e.preventDefault();
+    const stepper = stepBtn.closest('.num-stepper');
+    const input = stepper?.querySelector('input[type="number"]');
+    if (!input) return;
+
+    const dir = Number(stepBtn.getAttribute('data-step-dir')) || 0;
+    const stepAttr = parseFloat(input.getAttribute('step') || '1');
+    const step = Number.isFinite(stepAttr) && stepAttr > 0 ? stepAttr : 1;
+    const minAttr = input.getAttribute('min');
+    const maxAttr = input.getAttribute('max');
+    const minVal = minAttr !== null ? parseFloat(minAttr) : -Infinity;
+    const maxVal = maxAttr !== null ? parseFloat(maxAttr) : Infinity;
+
+    const current = parseFloat(String(input.value || '0').replace(',', '.'));
+    const base = Number.isFinite(current) ? current : 0;
+    let next = base + dir * step;
+    if (Number.isFinite(minVal)) next = Math.max(minVal, next);
+    if (Number.isFinite(maxVal)) next = Math.min(maxVal, next);
+
+    const decimals = String(step).includes('.') ? String(step).split('.')[1].length : 0;
+    input.value = decimals > 0 ? next.toFixed(decimals) : String(Math.round(next));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
 
   // Category Tabs
   els.categoryTabs.querySelectorAll('.tab-btn').forEach((btn) => {
