@@ -666,6 +666,60 @@ body {
   accent-color: var(--accent-emerald);
 }
 
+.checkbox-pill-amber {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.08);
+  color: #fde68a;
+  font-weight: 600;
+}
+
+.checkbox-pill-amber:hover {
+  border-color: rgba(245, 158, 11, 0.8);
+  background: rgba(245, 158, 11, 0.16);
+  color: #fff;
+}
+
+.checkbox-pill-amber input[type="checkbox"] {
+  accent-color: #f59e0b;
+}
+
+.btn-toggle-generic-quick {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fde68a;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.btn-toggle-generic-quick:hover {
+  background: rgba(245, 158, 11, 0.22);
+  color: #ffffff;
+  border-color: #f59e0b;
+}
+
+.btn-toggle-generic-quick.active {
+  background: #d97706;
+  color: #ffffff;
+  border-color: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+}
+
+.type-pill-generic {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.67rem;
+  font-weight: 700;
+  margin-right: 4px;
+}
+
 /* MULTI-EDITION EXAMPLES PANEL (Same Card Name across Different Editions) */
 .multi-edition-panel {
   border-color: rgba(212, 168, 83, 0.32);

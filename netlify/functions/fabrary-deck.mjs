@@ -28,6 +28,9 @@ const GET_DECK_QUERY = `
         defaultImage
         types
         subtypes
+        classes
+        talents
+        typeText
         rarity
         rarities
         intellect
@@ -76,6 +79,9 @@ const GET_DECK_QUERY = `
           defense
           types
           subtypes
+          classes
+          talents
+          typeText
           rarities
           rarity
           defaultImage
@@ -124,6 +130,9 @@ const GET_CARD_QUERY = `
       defense
       types
       subtypes
+      classes
+      talents
+      typeText
       rarities
       rarity
       defaultImage
@@ -445,6 +454,9 @@ function buildCardEntry({
     defense: card.defense ?? null,
     types: card.types || [],
     subtypes: card.subtypes || [],
+    classes: card.classes || [],
+    talents: card.talents || [],
+    typeText: card.typeText || null,
     rarity: card.rarity || 'Common',
     rarities: card.rarities || [],
     keywords: card.keywords || [],

@@ -32,6 +32,9 @@ const GET_DECK_QUERY = `
         defaultImage
         types
         subtypes
+        classes
+        talents
+        typeText
         rarity
         rarities
         intellect
@@ -80,6 +83,9 @@ const GET_DECK_QUERY = `
           defense
           types
           subtypes
+          classes
+          talents
+          typeText
           rarities
           rarity
           defaultImage
@@ -128,6 +134,9 @@ const GET_CARD_QUERY = `
       defense
       types
       subtypes
+      classes
+      talents
+      typeText
       rarities
       rarity
       defaultImage
@@ -486,6 +495,9 @@ function buildCardEntry({
     defense: card.defense ?? null,
     types: card.types || [],
     subtypes: card.subtypes || [],
+    classes: card.classes || [],
+    talents: card.talents || [],
+    typeText: card.typeText || null,
     rarity: card.rarity || 'Common',
     rarities: card.rarities || [],
     keywords: card.keywords || [],
@@ -979,7 +991,10 @@ const server = http.createServer(async (req, res) => {
     }
     const ext = path.extname(fullPath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': contentType });
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+    });
     fs.createReadStream(fullPath).pipe(res);
   });
 });

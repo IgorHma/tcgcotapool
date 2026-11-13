@@ -37,6 +37,7 @@ const state = {
     foiling: 'all', // 'all' | 'Normal' | 'Rainbow' | 'Cold'
     setType: 'all', // 'all' | 'noPromos' | 'firstAlpha' | 'unlimitedRegular'
     priceMetric: 'lowestAvailable', // 'lowestAvailable' | 'printPrice' | 'marketPrice' | 'lowestWithShipping'
+    excludeGeneric: false, // Quando true, deixa todas as cartas do tipo Generic em OFF (não cotar)
     includedSections: new Set(['main', 'arena', 'inventory', 'hero', 'tokens']),
   },
 };
@@ -75,6 +76,9 @@ const els = {
   filterSetType: document.getElementById('filterSetType'),
   filterPriceMetric: document.getElementById('filterPriceMetric'),
   sectionToggles: document.querySelectorAll('.section-toggle'),
+  toggleExcludeGeneric: document.getElementById('toggleExcludeGeneric'),
+  labelExcludeGeneric: document.getElementById('labelExcludeGeneric'),
+  btnToggleGenericQuick: document.getElementById('btnToggleGenericQuick'),
 
   multiEditionExamplesSection: document.getElementById('multiEditionExamplesSection'),
   multiEditionExamplesGrid: document.getElementById('multiEditionExamplesGrid'),
@@ -84,7 +88,6 @@ const els = {
   quoteTimestampTag: document.getElementById('quoteTimestampTag'),
   exportExcelBtn: document.getElementById('exportExcelBtn'),
   toolbarExportExcelBtn: document.getElementById('toolbarExportExcelBtn'),
-  tcgMassEntryBtn: document.getElementById('tcgMassEntryBtn'),
   copyQuoteBtn: document.getElementById('copyQuoteBtn'),
   exportCsvBtn: document.getElementById('exportCsvBtn'),
   activeMetricLabel: document.getElementById('activeMetricLabel'),
@@ -404,9 +407,14 @@ function applyFiltersToAllItems(clearManualOverrides = false) {
       item.versionSplits = null;
     }
 
-    // Update inclusion based on section checkboxes unless user manually toggled the row status
+    // Update inclusion based on section checkboxes and generic filter unless user manually toggled the row status
     if (!item.manualCheckOverride) {
-      item.included = state.filters.includedSections.has(item.section);
+      const sectionIncluded = state.filters.includedSections.has(item.section);
+      if (state.filters.excludeGeneric && isItemGeneric(item)) {
+        item.included = false;
+      } else {
+        item.included = sectionIncluded;
+      }
     }
 
     const picked = pickBestPrintingForItem(item, state.filters);
@@ -517,6 +525,39 @@ function applyVersionSplitPreset(item, preset = 'auto') {
 
   item.versionSplits = splits;
   item.quantity = totalQty;
+}
+
+/**
+ * Checks whether a card item belongs to the Generic class/type.
+ */
+function isItemGeneric(item) {
+  if (!item) return false;
+  const match = (s) => typeof s === 'string' && s.trim().toLowerCase() === 'generic';
+
+  // 1. Check official Fabrary classes array (e.g. classes: ['Generic'])
+  if (Array.isArray(item.classes) && item.classes.some(match)) return true;
+  if (typeof item.classes === 'string' && item.classes.toLowerCase().includes('generic')) return true;
+
+  // 2. Check Fabrary typeText (e.g. typeText: "Generic Action - Attack", "Generic Defense Reaction", "Generic Equipment")
+  if (typeof item.typeText === 'string' && item.typeText.toLowerCase().includes('generic')) return true;
+
+  // 3. Check types & subtypes
+  if (Array.isArray(item.types) && item.types.some(match)) return true;
+  if (typeof item.types === 'string' && item.types.toLowerCase().includes('generic')) return true;
+
+  if (Array.isArray(item.subtypes) && item.subtypes.some(match)) return true;
+  if (typeof item.subtypes === 'string' && item.subtypes.toLowerCase().includes('generic')) return true;
+
+  if (Array.isArray(item.keywords) && item.keywords.some(match)) return true;
+
+  if (item.card) {
+    if (Array.isArray(item.card.classes) && item.card.classes.some(match)) return true;
+    if (typeof item.card.typeText === 'string' && item.card.typeText.toLowerCase().includes('generic')) return true;
+    if (Array.isArray(item.card.types) && item.card.types.some(match)) return true;
+    if (Array.isArray(item.card.subtypes) && item.card.subtypes.some(match)) return true;
+  }
+
+  return false;
 }
 
 /**
@@ -784,6 +825,23 @@ function renderDeckHeaderAndCounts() {
   els.tabCountInventory.textContent = String(tabCounts.inventory);
   els.tabCountTokens.textContent = String(tabCounts.tokens);
   els.tabCountHero.textContent = String(tabCounts.hero);
+
+  const genericItems = state.items.filter(isItemGeneric);
+  const genericCopies = genericItems.reduce((acc, it) => acc + (it.quantity || 1), 0);
+  if (els.labelExcludeGeneric) {
+    els.labelExcludeGeneric.innerHTML = `🚫 Não Cotar <strong>Genéricas (Generic: ${genericCopies} cópias)</strong>`;
+  }
+  if (els.btnToggleGenericQuick) {
+    if (state.filters.excludeGeneric) {
+      els.btnToggleGenericQuick.classList.add('active');
+      els.btnToggleGenericQuick.innerHTML = `🚫 Genéricas: <strong>OFF (${genericCopies})</strong>`;
+      els.btnToggleGenericQuick.title = 'Genéricas estão OFF (não cotadas). Clique para voltar a cotar.';
+    } else {
+      els.btnToggleGenericQuick.classList.remove('active');
+      els.btnToggleGenericQuick.innerHTML = `🚫 Genéricas: Cotar (${genericCopies})`;
+      els.btnToggleGenericQuick.title = 'Clique para deixar OFF todas as cartas Genéricas.';
+    }
+  }
 }
 
 /**
@@ -882,7 +940,9 @@ function renderCardsTable() {
       ? `<span class="pitch-label-pill pitch-pill-${pitchNum}">${pitchLabels[pitchNum]}</span>`
       : '';
 
-    const typeSub = [...(item.types || []), ...(item.subtypes || [])].slice(0, 3).join(' • ');
+    const isGen = isItemGeneric(item);
+    const genericBadge = isGen ? `<span class="type-pill-generic" title="Carta do tipo Generic">Generic</span>` : '';
+    const typeSub = item.typeText || [...(item.classes || []), ...(item.types || []), ...(item.subtypes || [])].slice(0, 3).join(' • ');
     const selectedRarity = item.selectedPrinting?.rarity || item.rarity || 'Common';
     const rarityBadge =
       selectedRarity === 'Token'
@@ -1413,6 +1473,7 @@ function renderCardsTable() {
               ${pitchPillHtml}
             </div>
             <div class="card-submeta">
+              ${genericBadge}
               <span>${escapeHtml(typeSub)}</span>
               ${rarityBadge}
             </div>
@@ -1541,8 +1602,6 @@ function renderQuoteSummary() {
     tokens: 0,
   };
 
-  const massEntryParts = [];
-
   for (const item of state.items) {
     const pricing = computeItemPricing(item);
 
@@ -1577,10 +1636,6 @@ function renderQuoteSummary() {
     if (sectionTotals[item.section] !== undefined) {
       sectionTotals[item.section] += pricing.subtotal;
     }
-
-    // Build TCGPlayer Mass Entry item string (only for non-token charged cards)
-    const tcgName = item.selectedPrinting?.tcgplayer?.name || item.name;
-    massEntryParts.push(`${item.quantity} ${tcgName}`);
   }
 
   const diffSavings = Math.max(0, totalMaxEditionCost - totalSelected);
@@ -1604,14 +1659,6 @@ function renderQuoteSummary() {
     els.quoteTimestampTag.textContent = `✓ Cotação Ao Vivo TCGPlayer (${langInfo.flag} ${langInfo.label}) atualizada às ${dt.toLocaleTimeString('pt-BR')}`;
   } else {
     els.quoteTimestampTag.textContent = `Pré-cotação pelo Menor Valor (${langInfo.flag} ${langInfo.label}) • Clique em "2. Avaliar Menor Preço no TCGPlayer" para listagens ao vivo`;
-  }
-
-  // TCGPlayer Mass Entry link
-  if (massEntryParts.length > 0) {
-    const encodedList = encodeURIComponent(massEntryParts.join('||'));
-    els.tcgMassEntryBtn.href = `https://www.tcgplayer.com/massentry?productline=Flesh%20%26%20Blood%20TCG&c=${encodedList}`;
-  } else {
-    els.tcgMassEntryBtn.href = 'https://www.tcgplayer.com/';
   }
 }
 
@@ -2104,6 +2151,9 @@ async function syncFiltersFromControls(clearManual = false) {
   state.filters.foiling = els.filterFoiling.value;
   state.filters.setType = els.filterSetType.value;
   state.filters.priceMetric = els.filterPriceMetric.value;
+  if (els.toggleExcludeGeneric) {
+    state.filters.excludeGeneric = Boolean(els.toggleExcludeGeneric.checked);
+  }
 
   const included = new Set();
   els.sectionToggles.forEach((chk) => {
@@ -2158,6 +2208,37 @@ function setViewMode(mode) {
 }
 
 /**
+ * Enables or disables excluding generic cards from quote (Generic = OFF).
+ */
+function setExcludeGeneric(enabled) {
+  state.filters.excludeGeneric = Boolean(enabled);
+  if (els.toggleExcludeGeneric) {
+    els.toggleExcludeGeneric.checked = state.filters.excludeGeneric;
+  }
+
+  for (const item of state.items) {
+    if (isItemGeneric(item)) {
+      if (state.filters.excludeGeneric) {
+        item.included = false;
+      } else {
+        item.included = state.filters.includedSections.has(item.section);
+      }
+      item.manualCheckOverride = false;
+    }
+  }
+
+  renderDeckHeaderAndCounts();
+  renderCardsTable();
+  renderQuoteSummary();
+
+  showToast(
+    state.filters.excludeGeneric
+      ? '🚫 Cartas Genéricas (Generic) definidas como OFF (não cotadas).'
+      : '✓ Cartas Genéricas (Generic) reativadas na cotação.'
+  );
+}
+
+/**
  * Resets all Step 2 filters to default values.
  */
 function handleResetFilters() {
@@ -2166,6 +2247,8 @@ function handleResetFilters() {
   els.filterFoiling.value = 'all';
   els.filterSetType.value = 'all';
   els.filterPriceMetric.value = 'lowestAvailable';
+  if (els.toggleExcludeGeneric) els.toggleExcludeGeneric.checked = false;
+  state.filters.excludeGeneric = false;
   els.sectionToggles.forEach((chk) => {
     chk.checked = true;
   });
@@ -2309,104 +2392,160 @@ function handleExportCsv() {
 }
 
 /**
- * Generates and downloads a clean, simple native Excel (.xlsx) spreadsheet without images,
+ * Generates and downloads a clean, simple native Excel (.xlsx) spreadsheet,
  * listing all cards and their values in USD ($), including differentiated copy versions (e.g., 2x Foil + 1x Normal).
  */
 function handleExportExcel() {
-  if (!state.deck || state.items.length === 0) return;
-
-  const pitchLabelMap = { 1: '1 (Vermelho)', 2: '2 (Amarelo)', 3: '3 (Azul)' };
-  const rows = [];
-
-  // Header Row (row 1)
-  rows.push([
-    { type: 'str', value: 'Qtd', style: 1 },
-    { type: 'str', value: 'Carta / Versão', style: 1 },
-    { type: 'str', value: 'Pitch', style: 1 },
-    { type: 'str', value: 'Seção', style: 1 },
-    { type: 'str', value: 'Código da Edição', style: 1 },
-    { type: 'str', value: 'Coleção (Set)', style: 1 },
-    { type: 'str', value: 'Versão / Foiling', style: 1 },
-    { type: 'str', value: 'Idioma', style: 1 },
-    { type: 'str', value: 'Cobrança', style: 1 },
-    { type: 'str', value: 'Valor Unitário (USD)', style: 1 },
-    { type: 'str', value: 'Valor Total (USD)', style: 1 },
-  ]);
-
-  let grandTotal = 0;
-  let totalCopies = 0;
-
-  for (const item of state.items) {
-    if (!item.included || item.quantity <= 0) continue;
-
-    const pricing = computeItemPricing(item);
-    for (const sp of pricing.splits) {
-      if (sp.qty <= 0) continue;
-      const p = sp.printing || item.selectedPrinting || {};
-      const unitVal = pricing.isFreeToken ? 0 : Number((sp.unitPrice ?? 0).toFixed(2));
-      const subVal = pricing.isFreeToken ? 0 : Number(sp.subtotal.toFixed(2));
-
-      totalCopies += sp.qty;
-      grandTotal += subVal;
-
-      const cardNameDisplay = pricing.hasVersionSplits
-        ? `${item.name} (${sp.qty}x ${sp.badgeMeta.compactLabel} de ${item.quantity} cópias)`
-        : item.name;
-
-      rows.push([
-        { type: 'num', value: sp.qty, style: 0 },
-        { type: 'str', value: cardNameDisplay, style: 0 },
-        { type: 'str', value: pitchLabelMap[item.pitch] || '-', style: 0 },
-        { type: 'str', value: item.sectionLabel, style: 0 },
-        { type: 'str', value: p.print || '-', style: 0 },
-        { type: 'str', value: p.set || '-', style: 0 },
-        { type: 'str', value: sp.badgeMeta.compactLabel, style: 0 },
-        { type: 'str', value: pricing.resolvedLanguage || 'English', style: 0 },
-        {
-          type: 'str',
-          value: pricing.isFreeToken ? 'Token (Grátis $0.00)' : 'Cobrada',
-          style: 0,
-        },
-        { type: 'num', value: unitVal, style: 2 },
-        { type: 'num', value: subVal, style: 2 },
-      ]);
-    }
+  if (!state.items || state.items.length === 0) {
+    showToast('⚠️ Carregue um deck primeiro antes de exportar a planilha.');
+    return;
   }
 
-  const lastDataRowIdx = rows.length;
+  try {
+    const pitchLabelMap = { 1: '1 (Vermelho)', 2: '2 (Amarelo)', 3: '3 (Azul)' };
 
-  // Final Total Row
-  rows.push([
-    { type: 'num', value: totalCopies, style: 1 },
-    { type: 'str', value: 'TOTAL GERAL DA LISTA (USD)', style: 1 },
-    { type: 'str', value: '', style: 1 },
-    { type: 'str', value: '', style: 1 },
-    { type: 'str', value: '', style: 1 },
-    { type: 'str', value: '', style: 1 },
-    { type: 'str', value: '', style: 1 },
-    { type: 'str', value: '', style: 1 },
-    { type: 'str', value: '', style: 1 },
-    { type: 'str', value: '', style: 1 },
-    {
-      type: 'formula',
-      formula: lastDataRowIdx >= 2 ? `SUM(K2:K${lastDataRowIdx})` : '0',
-      value: Number(grandTotal.toFixed(2)),
-      style: 3,
-    },
-  ]);
+    // Headers
+    const headers = [
+      'Qtd',
+      'Carta / Versão',
+      'Pitch',
+      'Seção',
+      'Tipo / Classe',
+      'Código da Edição',
+      'Coleção (Set)',
+      'Versão / Foiling',
+      'Idioma',
+      'Cobrança',
+      'Valor Unitário (USD)',
+      'Valor Total (USD)',
+      'Link TCGPlayer',
+    ];
 
-  const colWidths = [8, 30, 14, 24, 22, 26, 12, 12, 20, 20, 20];
-  const xlsxBlob = buildSimpleXlsxBlob(rows, colWidths, 'Cotacao Cartas');
+    const data = [headers];
+    let grandTotal = 0;
+    let totalCopies = 0;
 
-  const url = URL.createObjectURL(xlsxBlob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `planilha-cartas-${state.deck.deckId || 'fabrary'}.xlsx`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast('📊 Planilha do Excel (.xlsx) gerada com sucesso!');
+    for (const item of state.items) {
+      if (!item.included || item.quantity <= 0) continue;
+
+      const pricing = computeItemPricing(item);
+      const isFree = Boolean(pricing.isFreeToken || item.isFree);
+
+      for (const sp of pricing.splits) {
+        if (sp.qty <= 0) continue;
+        const p = sp.printing || item.selectedPrinting || {};
+        const unitVal = isFree ? 0 : Number((sp.unitPrice ?? 0).toFixed(2));
+        const subVal = isFree ? 0 : Number((sp.subtotal ?? 0).toFixed(2));
+        const foilLabel = sp.badgeMeta?.compactLabel || sp.versionTag || 'Normal';
+
+        totalCopies += sp.qty;
+        grandTotal += subVal;
+
+        const cardNameDisplay = pricing.hasVersionSplits
+          ? `${item.name} (${sp.qty}x ${foilLabel} de ${item.quantity} cópias)`
+          : item.name;
+
+        data.push([
+          sp.qty,
+          cardNameDisplay,
+          pitchLabelMap[item.pitch] || '-',
+          item.sectionLabel || item.section || '-',
+          item.typeText || (Array.isArray(item.classes) ? item.classes.join(', ') : '-'),
+          p.print || '-',
+          p.set || '-',
+          foilLabel,
+          pricing.resolvedLanguage || 'English',
+          isFree ? 'Grátis ($0.00)' : 'Cobrada',
+          unitVal,
+          subVal,
+          sp.tcgUrl || pricing.tcgUrl || '',
+        ]);
+      }
+    }
+
+    // Final Total Row
+    data.push([
+      totalCopies,
+      'TOTAL GERAL DA LISTA (USD)',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      Number(grandTotal.toFixed(2)),
+      '',
+    ]);
+
+    const deckId = state.deck?.deckId || 'fabrary';
+    const filename = `planilha-cartas-${deckId}.xlsx`;
+
+    // 1. Primary: Use SheetJS (XLSX) if loaded for standard native .xlsx
+    if (typeof XLSX !== 'undefined') {
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws['!cols'] = [
+        { wch: 6 },
+        { wch: 34 },
+        { wch: 14 },
+        { wch: 22 },
+        { wch: 24 },
+        { wch: 16 },
+        { wch: 24 },
+        { wch: 14 },
+        { wch: 10 },
+        { wch: 16 },
+        { wch: 20 },
+        { wch: 20 },
+        { wch: 45 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Cotação Deck');
+      
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      showToast('📊 Planilha Excel (.xlsx) baixada com sucesso!');
+      return;
+    }
+
+    // 2. Fallback: Pure JS OpenXML generation with safe deferred URL revocation
+    const colWidths = [8, 30, 14, 24, 24, 16, 24, 14, 10, 16, 20, 20, 45];
+    const openXmlRows = data.map((row, rIdx) => {
+      const isHeaderOrTotal = rIdx === 0 || rIdx === data.length - 1;
+      return row.map((val, cIdx) => {
+        if (typeof val === 'number') {
+          return { type: 'num', value: val, style: isHeaderOrTotal ? 1 : 2 };
+        }
+        return { type: 'str', value: String(val ?? ''), style: isHeaderOrTotal ? 1 : 0 };
+      });
+    });
+
+    const xlsxBlob = buildSimpleXlsxBlob(openXmlRows, colWidths, 'Cotacao');
+    const url = URL.createObjectURL(xlsxBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    showToast('📊 Planilha Excel (.xlsx) gerada com sucesso!');
+  } catch (err) {
+    console.error('Erro ao exportar Excel:', err);
+    showError('Erro ao exportar planilha Excel: ' + err.message);
+  }
 }
 
 /**
@@ -2689,6 +2828,18 @@ function init() {
     });
   });
 
+  if (els.toggleExcludeGeneric) {
+    els.toggleExcludeGeneric.addEventListener('change', (e) => {
+      setExcludeGeneric(e.target.checked);
+    });
+  }
+
+  if (els.btnToggleGenericQuick) {
+    els.btnToggleGenericQuick.addEventListener('click', () => {
+      setExcludeGeneric(!state.filters.excludeGeneric);
+    });
+  }
+
   // Category Tabs
   els.categoryTabs.querySelectorAll('.tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -2717,6 +2868,13 @@ function init() {
   if (els.toolbarExportExcelBtn) {
     els.toolbarExportExcelBtn.addEventListener('click', handleExportExcel);
   }
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('#exportExcelBtn, #toolbarExportExcelBtn, .btn-excel');
+    if (btn) {
+      e.preventDefault();
+      handleExportExcel();
+    }
+  });
   els.copyQuoteBtn.addEventListener('click', handleCopyQuoteSummary);
   els.exportCsvBtn.addEventListener('click', handleExportCsv);
 

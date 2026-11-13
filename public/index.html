@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Cinzel:wght@600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <!-- Ambient Background -->
@@ -178,7 +178,7 @@
         </div>
       </div>
 
-      <!-- Checkboxes for Sections -->
+      <!-- Checkboxes for Sections & Card Types -->
       <div class="filters-toggles-row">
         <div class="toggles-block">
           <span class="toggles-title">Seções Incluídas no Cálculo:</span>
@@ -205,6 +205,16 @@
             </label>
           </div>
         </div>
+
+        <div class="toggles-block">
+          <span class="toggles-title">Filtro por Tipo de Carta:</span>
+          <div class="toggles-list">
+            <label class="checkbox-pill checkbox-pill-amber" title="Deixar OFF (não cotar) todas as cartas que são do tipo Generic">
+              <input type="checkbox" id="toggleExcludeGeneric" />
+              <span id="labelExcludeGeneric">🚫 Não Cotar <strong>Genéricas (Generic = OFF)</strong></span>
+            </label>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -219,9 +229,6 @@
           <button type="button" id="exportExcelBtn" class="btn btn-excel btn-sm" title="Gerar planilha simples do Excel (.xlsx) sem imagens com as cartas e valores">
             📊 Baixar Planilha Excel (.xlsx)
           </button>
-          <a id="tcgMassEntryBtn" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-tcg-outline">
-            🛒 Comprar Lista no TCGPlayer (Mass Entry) ↗
-          </a>
           <button type="button" id="copyQuoteBtn" class="btn btn-secondary btn-sm">📋 Copiar Cotação</button>
           <button type="button" id="exportCsvBtn" class="btn btn-secondary btn-sm">📥 Exportar CSV</button>
         </div>
@@ -301,6 +308,14 @@
           >
             📊 Planilha Excel (.xlsx)
           </button>
+          <button
+            type="button"
+            id="btnToggleGenericQuick"
+            class="btn-toggle-generic-quick"
+            title="Alternar: Deixar OFF todas as cartas do tipo Generic (não cotar genéricas)"
+          >
+            🚫 Genéricas: Cotar
+          </button>
           <div class="search-box">
             <span>🔍</span>
             <input type="text" id="cardSearchInput" placeholder="Filtrar por nome, código ou coleção..." />
@@ -356,6 +371,12 @@
   <!-- Toast Notification -->
   <div id="toastNotification" class="toast" hidden></div>
 
-  <script src="/app.js"></script>
+  <script src="./xlsx.full.min.js"></script>
+  <script>
+    if (typeof XLSX === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"><\/script>');
+    }
+  </script>
+  <script src="./app.js"></script>
 </body>
 </html>
