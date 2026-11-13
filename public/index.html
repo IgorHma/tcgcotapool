@@ -267,9 +267,70 @@
             <div class="breakdown-row"><span>Inventory (Sideboard):</span> <strong id="brkInventory">$0.00</strong></div>
             <div class="breakdown-row"><span>Herói:</span> <strong id="brkHero">$0.00</strong></div>
             <div class="breakdown-row"><span>Tokens / Extras:</span> <strong id="brkTokens">$0.00</strong></div>
+            <div class="breakdown-row"><span>Produtos / Acessórios:</span> <strong id="brkProducts">$0.00</strong></div>
             <div class="breakdown-row breakdown-token"><span>Cartas Grátis ($0.00):</span> <strong id="brkFree">$0.00</strong></div>
           </div>
         </div>
+      </div>
+
+      <!-- CUSTOM PRODUCTS (Deckbox, Playmat, Sleeves) -->
+      <div class="custom-products-panel">
+        <div class="custom-products-header">
+          <span class="custom-products-title">🎒 Adicionar Produto / Acessório na Cotação</span>
+          <span class="custom-products-hint">Valores em EUR (€) convertidos a ~1,08 USD e BRL (R$) divididos por 7</span>
+        </div>
+        <div class="custom-products-form">
+          <select id="customProductType" class="form-select form-select-sm custom-prod-type" aria-label="Tipo do produto">
+            <option value="Deckbox">Deckbox</option>
+            <option value="Playmat">Playmat</option>
+            <option value="Sleeves">Sleeves</option>
+          </select>
+          <input
+            type="text"
+            id="customProductName"
+            class="custom-prod-name-input"
+            placeholder="Descrição opcional (ex: Dragon Shield Matte, Satin Tower...)"
+          />
+          <div class="custom-prod-field">
+            <span class="custom-prod-label">Qtd:</span>
+            <div class="num-stepper num-stepper-compact">
+              <button type="button" class="num-step-btn" data-step-dir="-1" aria-label="Diminuir quantidade">−</button>
+              <input
+                type="number"
+                id="customProductQty"
+                class="qty-input"
+                min="1"
+                max="99"
+                value="1"
+                aria-label="Quantidade do produto"
+              />
+              <button type="button" class="num-step-btn" data-step-dir="1" aria-label="Aumentar quantidade">+</button>
+            </div>
+          </div>
+          <select id="customProductCurrency" class="form-select form-select-sm custom-prod-currency" aria-label="Moeda do produto">
+            <option value="USD">USD ($)</option>
+            <option value="EUR">EUR (€)</option>
+            <option value="BRL">BRL (R$)</option>
+          </select>
+          <div class="custom-prod-field">
+            <span class="custom-prod-label">Valor:</span>
+            <div class="num-stepper num-stepper-emerald">
+              <button type="button" class="num-step-btn" data-step-dir="-1" aria-label="Diminuir valor">−</button>
+              <input
+                type="number"
+                id="customProductPrice"
+                class="custom-prod-price-input"
+                min="0"
+                step="0.50"
+                value="0.00"
+                aria-label="Valor unitário do produto"
+              />
+              <button type="button" class="num-step-btn" data-step-dir="1" aria-label="Aumentar valor">+</button>
+            </div>
+          </div>
+          <button type="button" id="addCustomProductBtn" class="btn btn-primary btn-sm">➕ Adicionar Produto</button>
+        </div>
+        <div id="customProductsList" class="custom-products-list" hidden></div>
       </div>
     </section>
 
@@ -415,7 +476,6 @@
             <tr>
               <th class="col-check" title="Clique no botão de qualquer carta para alternar: Cotar ➔ Grátis ($0.00) ➔ Não Cotar">Cotar</th>
               <th class="col-card">Carta</th>
-              <th class="col-section">Seção</th>
               <th class="col-qty">Qtd</th>
               <th class="col-edition">Edição / Versão por Cópia</th>
               <th class="col-unit">Menor Unitário (USD)</th>

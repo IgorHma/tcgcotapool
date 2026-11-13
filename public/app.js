@@ -29,6 +29,7 @@ const state = {
   examplesCollapsed: false,
   expandedCardDrawers: new Set(), // Item IDs with open inline multi-edition drawer
   closedVersionPanels: new Set(), // Item IDs whose per-copy version box was closed/collapsed
+  customProducts: [], // Added accessories: { id, type, name, qty, currency, unitPriceOriginal }
   searchQuery: '',
   sortOrder: 'section',
   filters: {
@@ -113,7 +114,16 @@ const els = {
   brkInventory: document.getElementById('brkInventory'),
   brkHero: document.getElementById('brkHero'),
   brkTokens: document.getElementById('brkTokens'),
+  brkProducts: document.getElementById('brkProducts'),
   brkFree: document.getElementById('brkFree'),
+
+  customProductType: document.getElementById('customProductType'),
+  customProductName: document.getElementById('customProductName'),
+  customProductQty: document.getElementById('customProductQty'),
+  customProductCurrency: document.getElementById('customProductCurrency'),
+  customProductPrice: document.getElementById('customProductPrice'),
+  addCustomProductBtn: document.getElementById('addCustomProductBtn'),
+  customProductsList: document.getElementById('customProductsList'),
 
   cardsListSection: document.getElementById('cardsListSection'),
   cardsTable: document.getElementById('cardsTable'),
@@ -1065,7 +1075,7 @@ function renderCardsTable() {
   if (filteredItems.length === 0) {
     const emptyRow = document.createElement('tr');
     emptyRow.innerHTML = `
-      <td colspan="9" style="text-align:center; padding: 26px; color: var(--text-muted);">
+      <td colspan="7" style="text-align:center; padding: 26px; color: var(--text-muted);">
         Nenhuma carta encontrada para este filtro/aba.
       </td>
     `;
@@ -1637,9 +1647,6 @@ function renderCardsTable() {
           </div>
         </div>
       </td>
-      <td class="col-section">
-        <span class="section-pill section-${escapeHtml(item.section)}">${escapeHtml(item.sectionLabel)}</span>
-      </td>
       <td class="col-qty">
         ${qtyCellHtml}
       </td>
@@ -1702,7 +1709,7 @@ function renderCardsTable() {
         .join('');
 
       drawerTr.innerHTML = `
-        <td colspan="8">
+        <td colspan="7">
           <div class="drawer-inner">
             <div class="drawer-header">
               <span>🔍 Todas as ${item.printings.length} edições encontradas para "${escapeHtml(item.name)}" (Clique em qualquer edição para alternar):</span>
@@ -1725,6 +1732,91 @@ function renderCardsTable() {
 /**
  * Updates the Step 3 TCGPlayer Quote Summary Dashboard and Mass Entry link.
  */
+const EUR_TO_USD_RATE = 1.08;
+const USD_TO_BRL_RATE = 7;
+
+function convertProductPriceToUsd(amount, currency) {
+  const val = Number(amount) || 0;
+  if (currency === 'EUR') return val * EUR_TO_USD_RATE;
+  if (currency === 'BRL') return val / USD_TO_BRL_RATE;
+  return val;
+}
+
+function formatProductOriginalPrice(amount, currency) {
+  const val = Number(amount) || 0;
+  if (currency === 'EUR') {
+    return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val);
+  }
+  if (currency === 'BRL') {
+    return formatBrl(val);
+  }
+  return formatUsd(val);
+}
+
+function renderCustomProductsList() {
+  if (!els.customProductsList) return;
+  if (!state.customProducts || state.customProducts.length === 0) {
+    els.customProductsList.hidden = true;
+    els.customProductsList.innerHTML = '';
+    return;
+  }
+
+  els.customProductsList.hidden = false;
+  els.customProductsList.innerHTML = state.customProducts
+    .map((prod) => {
+      const unitUsd = convertProductPriceToUsd(prod.unitPriceOriginal, prod.currency);
+      const subUsd = unitUsd * prod.qty;
+      const subBrl = subUsd * USD_TO_BRL_RATE;
+      const origTotal = formatProductOriginalPrice(prod.unitPriceOriginal * prod.qty, prod.currency);
+      const origUnit = formatProductOriginalPrice(prod.unitPriceOriginal, prod.currency);
+      const labelName = prod.name ? escapeHtml(prod.name) : escapeHtml(prod.type);
+
+      return `
+        <div class="custom-product-row">
+          <div class="custom-product-info">
+            <span class="custom-product-badge">${escapeHtml(prod.type)}</span>
+            <span class="custom-product-name">${prod.qty}x ${labelName}</span>
+          </div>
+          <div class="custom-product-values">
+            <span class="custom-product-orig">${prod.qty}x ${origUnit} = ${origTotal} (${prod.currency})</span>
+            <span class="custom-product-usd">${formatUsd(subUsd)} • ${formatBrl(subBrl)}</span>
+            <button type="button" class="btn-remove-custom-prod" data-remove-prod-id="${escapeHtml(prod.id)}" title="Remover produto">✕</button>
+          </div>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+function handleAddCustomProduct() {
+  const type = els.customProductType?.value || 'Deckbox';
+  const name = (els.customProductName?.value || '').trim();
+  const qty = Math.max(1, parseInt(els.customProductQty?.value || '1', 10) || 1);
+  const currency = els.customProductCurrency?.value || 'USD';
+  const rawPrice = parseFloat(String(els.customProductPrice?.value || '0').replace(',', '.'));
+
+  if (!Number.isFinite(rawPrice) || rawPrice < 0) {
+    showToast('⚠️ Informe um valor válido para o produto.');
+    return;
+  }
+
+  state.customProducts.push({
+    id: `prod-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    type,
+    name: name || type,
+    qty,
+    currency,
+    unitPriceOriginal: rawPrice,
+  });
+
+  if (els.customProductName) els.customProductName.value = '';
+  if (els.customProductQty) els.customProductQty.value = '1';
+  if (els.customProductPrice) els.customProductPrice.value = '0.00';
+
+  renderQuoteSummary();
+  showToast(`🎒 ${qty}x ${name || type} adicionado à cotação!`);
+}
+
 function renderQuoteSummary() {
   if (!state.items || state.items.length === 0) {
     els.quoteSummarySection.hidden = true;
@@ -1798,6 +1890,15 @@ function renderQuoteSummary() {
     }
   }
 
+  const customProductsUsd = (state.customProducts || []).reduce((acc, prod) => {
+    return acc + convertProductPriceToUsd(prod.unitPriceOriginal, prod.currency) * (prod.qty || 1);
+  }, 0);
+  const customProductsQty = (state.customProducts || []).reduce((acc, prod) => acc + (prod.qty || 1), 0);
+
+  totalSelected += customProductsUsd;
+  totalMarket += customProductsUsd;
+  totalMaxEditionCost += customProductsUsd;
+
   const diffSavings = Math.max(0, totalMaxEditionCost - totalSelected);
 
   els.summaryTotalSelected.textContent = formatUsd(totalSelected);
@@ -1811,14 +1912,17 @@ function renderQuoteSummary() {
   // Show the total deck cost when using the most expensive editions
   els.summaryTotalSavings.textContent = formatUsd(totalMaxEditionCost);
   els.summarySavingsSub.textContent = `Economia de ${formatUsd(diffSavings)} em relação à cotação mais barata (${formatUsd(totalSelected)})`;
-  els.summaryCardsChargedSub.textContent = `${chargedCopiesCount} cópias cobradas • ${freeTokenCopiesCount} grátis ($0.00)`;
+  els.summaryCardsChargedSub.textContent = `${chargedCopiesCount} cópias cobradas • ${freeTokenCopiesCount} grátis ($0.00)${customProductsQty > 0 ? ` • +${customProductsQty} prod.` : ''}`;
 
   els.brkMain.textContent = formatUsd(sectionTotals.main);
   els.brkArena.textContent = formatUsd(sectionTotals.arena);
   els.brkInventory.textContent = formatUsd(sectionTotals.inventory);
   els.brkHero.textContent = formatUsd(sectionTotals.hero);
   if (els.brkTokens) els.brkTokens.textContent = formatUsd(sectionTotals.tokens);
+  if (els.brkProducts) els.brkProducts.textContent = formatUsd(customProductsUsd);
   if (els.brkFree) els.brkFree.textContent = `$0.00 (${freeTokenCopiesCount} cópias)`;
+
+  renderCustomProductsList();
 
   if (state.hasEvaluatedTcg && state.evaluatedAt) {
     const dt = new Date(state.evaluatedAt);
@@ -2605,6 +2709,15 @@ async function handleCopyQuoteSummary() {
     }
   }
 
+  for (const prod of state.customProducts || []) {
+    const unitUsd = convertProductPriceToUsd(prod.unitPriceOriginal, prod.currency);
+    const subUsd = unitUsd * (prod.qty || 1);
+    grandTotal += subUsd;
+    lines.push(
+      `${prod.qty}x [${prod.type}] ${prod.name} (${formatProductOriginalPrice(prod.unitPriceOriginal, prod.currency)} ${prod.currency}) -> ${formatUsd(unitUsd)} un. = ${formatUsd(subUsd)}`
+    );
+  }
+
   lines.push('--------------------------------------------------');
   lines.push(`💰 TOTAL DA LISTA (TCGPlayer USD): ${formatUsd(grandTotal)}`);
 
@@ -2697,7 +2810,7 @@ function handleExportExcel() {
   }
 
   try {
-    const pitchLabelMap = { 1: '1 (Vermelho)', 2: '2 (Amarelo)', 3: '3 (Azul)' };
+    const pitchLabelMap = { 1: 'Vermelho', 2: 'Amarelo', 3: 'Azul' };
 
     // Headers
     const headers = [
@@ -2752,7 +2865,30 @@ function handleExportExcel() {
       }
     }
 
-    // Final Total Row
+    for (const prod of state.customProducts || []) {
+      const qty = prod.qty || 1;
+      const unitUsd = Number(convertProductPriceToUsd(prod.unitPriceOriginal, prod.currency).toFixed(2));
+      const subUsd = Number((unitUsd * qty).toFixed(2));
+      totalCopies += qty;
+      grandTotal += subUsd;
+      data.push([
+        qty,
+        prod.name || prod.type,
+        '-',
+        `Produto (${prod.type})`,
+        '-',
+        `${formatProductOriginalPrice(prod.unitPriceOriginal, prod.currency)} (${prod.currency})`,
+        '-',
+        unitUsd,
+        subUsd,
+        '',
+      ]);
+    }
+
+    const totalUsdRounded = Number(grandTotal.toFixed(2));
+    const totalX7Rounded = Number((totalUsdRounded * USD_TO_BRL_RATE).toFixed(2));
+
+    // Final Total Rows (USD & x7 BRL)
     data.push([
       totalCopies,
       'TOTAL GERAL DA LISTA (USD)',
@@ -2762,24 +2898,51 @@ function handleExportExcel() {
       '',
       '',
       '',
-      Number(grandTotal.toFixed(2)),
+      totalUsdRounded,
       '',
     ]);
+    data.push([
+      '',
+      'VALOR TOTAL x7 (BRL / R$)',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      totalX7Rounded,
+      '',
+    ]);
+
+    // Highlighted summary block at the very top of the spreadsheet
+    const fullData = [
+      [
+        'RESUMO DA COTAÇÃO',
+        'Total de Itens:',
+        totalCopies,
+        'TOTAL (USD):',
+        totalUsdRounded,
+        'TOTAL x7 (BRL):',
+        totalX7Rounded,
+      ],
+      [],
+      ...data,
+    ];
 
     const deckId = state.deck?.deckId || 'fabrary';
     const filename = `planilha-cartas-${deckId}.xlsx`;
 
     // 1. Primary: Use SheetJS (XLSX) if loaded for standard native .xlsx
     if (typeof XLSX !== 'undefined') {
-      const ws = XLSX.utils.aoa_to_sheet(data);
+      const ws = XLSX.utils.aoa_to_sheet(fullData);
       ws['!cols'] = [
-        { wch: 6 },
+        { wch: 20 },
         { wch: 34 },
-        { wch: 14 },
+        { wch: 12 },
         { wch: 24 },
         { wch: 16 },
         { wch: 24 },
-        { wch: 14 },
+        { wch: 16 },
         { wch: 20 },
         { wch: 20 },
         { wch: 45 },
@@ -2804,14 +2967,14 @@ function handleExportExcel() {
     }
 
     // 2. Fallback: Pure JS OpenXML generation with safe deferred URL revocation
-    const colWidths = [8, 30, 14, 24, 16, 24, 14, 20, 20, 45];
-    const openXmlRows = data.map((row, rIdx) => {
-      const isHeaderOrTotal = rIdx === 0 || rIdx === data.length - 1;
-      return row.map((val, cIdx) => {
+    const colWidths = [20, 30, 12, 24, 16, 24, 16, 20, 20, 45];
+    const openXmlRows = fullData.map((row, rIdx) => {
+      const isHighlighted = rIdx === 0 || rIdx === 2 || rIdx >= fullData.length - 2;
+      return row.map((val) => {
         if (typeof val === 'number') {
-          return { type: 'num', value: val, style: isHeaderOrTotal ? 1 : 2 };
+          return { type: 'num', value: val, style: isHighlighted ? 1 : 2 };
         }
-        return { type: 'str', value: String(val ?? ''), style: isHeaderOrTotal ? 1 : 0 };
+        return { type: 'str', value: String(val ?? ''), style: isHighlighted ? 1 : 0 };
       });
     });
 
@@ -3239,6 +3402,36 @@ function init() {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
   });
+
+  if (els.addCustomProductBtn) {
+    els.addCustomProductBtn.addEventListener('click', handleAddCustomProduct);
+  }
+  if (els.customProductPrice) {
+    els.customProductPrice.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleAddCustomProduct();
+      }
+    });
+  }
+  if (els.customProductName) {
+    els.customProductName.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleAddCustomProduct();
+      }
+    });
+  }
+  if (els.customProductsList) {
+    els.customProductsList.addEventListener('click', (e) => {
+      const rmBtn = e.target.closest('[data-remove-prod-id]');
+      if (!rmBtn) return;
+      const prodId = rmBtn.getAttribute('data-remove-prod-id');
+      state.customProducts = (state.customProducts || []).filter((p) => p.id !== prodId);
+      renderQuoteSummary();
+      showToast('🗑️ Produto removido da cotação.');
+    });
+  }
 
   // Category Tabs
   els.categoryTabs.querySelectorAll('.tab-btn').forEach((btn) => {

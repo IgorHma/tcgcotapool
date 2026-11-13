@@ -1055,6 +1055,171 @@ input[type="number"]::-webkit-inner-spin-button {
   box-shadow: var(--shadow-card);
 }
 
+/* Custom Products Panel (Deckbox, Playmat, Sleeves) */
+.custom-products-panel {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: rgba(11, 14, 20, 0.72);
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  border-radius: var(--radius-md);
+}
+
+.custom-products-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.custom-products-title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #e2e8f0;
+}
+
+.custom-products-hint {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.custom-products-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.custom-prod-type {
+  min-width: 115px;
+}
+
+.custom-prod-name-input {
+  flex: 1;
+  min-width: 190px;
+  height: 30px;
+  background: rgba(11, 14, 20, 0.9);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: #ffffff;
+  padding: 0 10px;
+  font-size: 0.8rem;
+}
+
+.custom-prod-name-input:focus {
+  outline: none;
+  border-color: #60a5fa;
+}
+
+.custom-prod-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.custom-prod-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.custom-prod-currency {
+  min-width: 96px;
+}
+
+.custom-prod-price-input {
+  width: 68px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+.custom-prod-price-input:focus {
+  outline: none;
+}
+
+.custom-products-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.custom-product-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 7px 10px;
+  background: rgba(30, 41, 59, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+}
+
+.custom-product-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.custom-product-badge {
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.custom-product-name {
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.custom-product-values {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.custom-product-orig {
+  color: #cbd5e1;
+  font-size: 0.76rem;
+}
+
+.custom-product-usd {
+  color: #34d399;
+  font-weight: 800;
+}
+
+.btn-remove-custom-prod {
+  background: rgba(239, 68, 68, 0.14);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-remove-custom-prod:hover {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #ef4444;
+}
+
 .quote-summary-header {
   display: flex;
   align-items: center;
